@@ -4,7 +4,6 @@ import AudioPlayer from 'react-h5-audio-player';
 import 'react-h5-audio-player/lib/styles.css';
 import './App.css';
 
-// Using 127.0.0.1 to avoid Node v24 connection issues
 const STRAPI_URL = 'http://127.0.0.1:1337';
 
 function App() {
@@ -13,33 +12,56 @@ function App() {
   const [movies, setMovies] = useState([]);
   const [loading, setLoading] = useState(true);
   const [currentSong, setCurrentSong] = useState(null);
+  
+  // NEW: State for the Booking Modal
+  const [showModal, setShowModal] = useState(false);
+  const [formData, setFormData] = useState({ name: '', churchName: '', email: '', message: '' });
+  const [formStatus, setFormStatus] = useState(''); // 'sending', 'success', 'error'
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        console.log("Fetching data from Strapi..."); // Debug log
-
-        // 1. Fetch Songs
         const songRes = await axios.get(`${STRAPI_URL}/api/songs?populate=*`);
         setSongs(songRes.data.data);
-
-        // 2. Fetch Books
         const bookRes = await axios.get(`${STRAPI_URL}/api/books?populate=*`);
         setBooks(bookRes.data.data);
-
-        // 3. Fetch Movies
         const movieRes = await axios.get(`${STRAPI_URL}/api/movies?populate=*`);
         setMovies(movieRes.data.data);
-
         setLoading(false);
       } catch (error) {
         console.error("Error connecting to Strapi:", error);
         setLoading(false);
       }
     };
-
     fetchData();
   }, []);
+
+  // NEW: Handle Form Submit
+  const handleBooking = async (e) => {
+    e.preventDefault();
+    setFormStatus('sending');
+    try {
+      // Send data to Strapi 'Bookings' collection
+      await axios.post(`${STRAPI_URL}/api/bookings`, {
+        data: {
+            Name: formData.name,
+            ChurchName: formData.churchName,
+            Email: formData.email,
+            Message: formData.message
+        }
+      });
+      setFormStatus('success');
+      // Clear form after 2 seconds
+      setTimeout(() => {
+        setShowModal(false);
+        setFormStatus('');
+        setFormData({ name: '', churchName: '', email: '', message: '' });
+      }, 2000);
+    } catch (error) {
+      console.error(error);
+      setFormStatus('error');
+    }
+  };
 
   if (loading) return <div className="loading">Loading Ministry Content...</div>;
 
@@ -49,7 +71,9 @@ function App() {
       <header className="hero">
         <h1>Jude Jesururu</h1>
         <p>Worship | Writing | Filmmaking</p>
-        <button className="cta-button">Invite for Ministry</button>
+        <button className="cta-button" onClick={() => setShowModal(true)}>
+            Invite for Ministry
+        </button>
       </header>
 
       {/* BOOKS SECTION */}
@@ -102,12 +126,7 @@ function App() {
               <div className="song-info">
                 <strong>{song.Title}</strong>
               </div>
-              <button 
-                className="btn-play"
-                onClick={() => setCurrentSong(song)}
-              >
-                ▶ Play
-              </button>
+              <button className="btn-play" onClick={() => setCurrentSong(song)}>▶ Play</button>
             </div>
           ))}
         </div>
@@ -124,6 +143,36 @@ function App() {
           />
         </div>
       )}
+
+      {/* NEW: BOOKING MODAL */}
+      {showModal && (
+        <div className="modal-overlay">
+            <div className="modal-content">
+                <button className="close-btn" onClick={() => setShowModal(false)}>X</button>
+                <h2>Invite Jude</h2>
+                
+                {formStatus === 'success' ? (
+                    <div className="success-message">Request Sent! God bless you.</div>
+                ) : (
+                    <form onSubmit={handleBooking}>
+                        <input type="text" placeholder="Your Name" required 
+                            value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
+                        <input type="text" placeholder="Church / Ministry Name" required 
+                             value={formData.churchName} onChange={e => setFormData({...formData, churchName: e.target.value})} />
+                        <input type="email" placeholder="Email Address" required 
+                             value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} />
+                        <textarea placeholder="Tell us about the event..." rows="4" required
+                             value={formData.message} onChange={e => setFormData({...formData, message: e.target.value})}></textarea>
+                        
+                        <button type="submit" className="cta-button" style={{width: '100%', marginTop: '10px'}}>
+                            {formStatus === 'sending' ? 'Sending...' : 'Send Invitation'}
+                        </button>
+                    </form>
+                )}
+            </div>
+        </div>
+      )}
+
     </div>
   );
 }
