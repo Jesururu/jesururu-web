@@ -4,7 +4,8 @@ import AudioPlayer from 'react-h5-audio-player';
 import 'react-h5-audio-player/lib/styles.css';
 import './App.css';
 
-const STRAPI_URL = 'http://127.0.0.1:1337';
+// const STRAPI_URL = 'http://127.0.0.1:1337';
+const STRAPI_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:1337';
 
 function App() {
   const [songs, setSongs] = useState([]);
