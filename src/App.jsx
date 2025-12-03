@@ -39,44 +39,63 @@ const getSynopsisText = (synopsis) => {
 };
 
 // =========================================
-// COMPONENT: Book Card (Smart Pricing + Preorder Logic)
+// COMPONENT: Book Card (Fixed Duplicate Buttons)
 // =========================================
-const BookCard = ({ book, userCurrency }) => {
+const BookCard = ({ book, userCurrency, onPreorder }) => {
   const [isExpanded, setIsExpanded] = useState(false);
+  
+  // Helper to handle text safely
+  const getSynopsisText = (synopsis) => {
+    if (!synopsis) return '';
+    if (typeof synopsis === 'string') return synopsis;
+    if (Array.isArray(synopsis)) {
+      return synopsis.map(block => {
+        if (block.children) return block.children.map(child => child.text).join(' ');
+        return '';
+      }).join(' ');
+    }
+    return '';
+  };
+
   const synopsis = getSynopsisText(book.Synopsis);
   
   // DATE LOGIC
   const today = new Date();
   const launchDate = book.LaunchDate ? new Date(book.LaunchDate) : null;
-  
-  // Is this book coming in the future?
   const isPreorder = launchDate && launchDate > today;
-
-  // Format the visual date
   const formattedLaunchDate = launchDate ? launchDate.toLocaleDateString('en-US', {
     month: 'short', day: 'numeric', year: 'numeric'
   }) : '';
 
   // PRICING LOGIC
+  const formatCurrency = (amount, currencyCode) => {
+    try {
+      return new Intl.NumberFormat('en-US', { style: 'currency', currency: currencyCode }).format(amount);
+    } catch (error) { return `${currencyCode} ${amount}`; }
+  };
+
   let displayPrice = book.Price; 
-  if (book.LocalPrices && book.LocalPrices.length > 0) {
-    const localMatch = book.LocalPrices.find(p => p.Currency === userCurrency);
-    const usdMatch = book.LocalPrices.find(p => p.Currency === 'USD');
+  // Check both capitalizations just to be safe
+  const prices = book.localPrices || book.LocalPrices || [];
+  
+  if (prices.length > 0) {
+    const localMatch = prices.find(p => p.Currency === userCurrency);
+    const usdMatch = prices.find(p => p.Currency === 'USD');
     if (localMatch) displayPrice = formatCurrency(localMatch.Amount, localMatch.Currency);
     else if (usdMatch) displayPrice = formatCurrency(usdMatch.Amount, 'USD');
   }
 
+  // Determine if text is long enough to need a button
+  const isLongText = synopsis && synopsis.length > 120;
+
   return (
     <div className="group bg-white rounded-sm shadow-[0_10px_40px_-15px_rgba(0,0,0,0.1)] hover:shadow-[0_20px_50px_-10px_rgba(0,35,102,0.2)] hover:-translate-y-2 transition-all duration-500 border-t-4 border-transparent hover:border-ministry-gold flex flex-col h-full overflow-hidden relative">
-      {/* IMAGE AREA */}
-
+      
       {/* 1. IMAGE AREA */}
       <div className="h-64 sm:h-80 w-full overflow-hidden bg-gray-100 relative flex-shrink-0">
         {book.CoverArt && (
           <img src={book.CoverArt.url} alt={book.Title} className="w-full h-full object-cover transform group-hover:scale-105 transition duration-500" />
         )}
-        
-        {/* PREORDER BADGE (Only shows if coming soon) */}
         {isPreorder && (
             <div className="absolute top-4 right-4 bg-ministry-gold text-white text-[10px] font-bold px-3 py-1 uppercase tracking-widest shadow-md">
                 Coming Soon
@@ -88,37 +107,32 @@ const BookCard = ({ book, userCurrency }) => {
       <div className="p-6 flex flex-col flex-grow relative">
         <h3 className="text-xl font-bold text-gray-900 mb-3 font-serif leading-tight">{book.Title}</h3>
         
+        {/* SYNOPSIS AREA (The Fix is Here) */}
         <div className="relative mb-4 flex-grow">
-            {/* LOGIC CHANGE:
-              - Mobile: line-clamp-3 (Compact)
-              - Desktop: line-clamp-6 (Shows more, but prevents 300-word walls)
-              - If isExpanded is true: Show everything
+            {/* LOGIC:
+                - If NOT expanded: Clamp to 3 lines (mobile) or 6 lines (desktop)
+                - If Expanded: Show everything
             */}
             <p className={`text-gray-600 text-sm transition-all duration-300 ${
                 !isExpanded ? 'line-clamp-3 md:line-clamp-6' : ''
             }`}>
                 {synopsis}
             </p>
-           {/* TOGGLE BUTTON (Visible on ALL devices now) */}
-            {synopsis && synopsis.length > 150 && (
+
+            {/* SINGLE BUTTON LOGIC */}
+            {isLongText && (
                 <button 
                     onClick={() => setIsExpanded(!isExpanded)}
                     className="mt-2 text-xs font-bold text-ministry-blue uppercase tracking-wider flex items-center focus:outline-none hover:text-ministry-gold"
                 >
-                    {isExpanded ? 'Show Less ↑' : 'Read Full Synopsis ↓'}
+                    {isExpanded ? 'Show Less ↑' : 'Read More ↓'}
                 </button>
             )}
-           {isExpanded && (
-              <button onClick={() => setIsExpanded(false)} className="md:hidden mt-2 text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center focus:outline-none hover:text-ministry-blue">
-                Show Less ↑
-              </button>
-           )}
         </div>
 
         {/* 3. FOOTER */}
         <div className="mt-auto pt-4 border-t border-gray-50 flex items-center justify-between bg-gray-50/50 -mx-6 -mb-6 p-4">
             <div className="flex flex-col">
-                {/* Show Launch Date if Preorder, otherwise show 'Published' label */}
                 <span className="text-[10px] uppercase tracking-widest text-gray-400 font-bold">
                     {isPreorder ? `Launches ${formattedLaunchDate}` : 'Price'}
                 </span>
@@ -126,11 +140,22 @@ const BookCard = ({ book, userCurrency }) => {
             </div>
             
             <a href={book.BuyLink} className={`inline-flex items-center justify-center px-4 py-2 text-white text-xs font-bold uppercase tracking-widest rounded-sm transition shadow-sm ${
-                isPreorder 
-                ? 'bg-gray-900 hover:bg-ministry-gold' // Black button for Preorder
-                : 'bg-ministry-blue hover:bg-ministry-gold' // Blue button for Get Copy
+                isPreorder ? 'bg-gray-900 hover:bg-ministry-gold' : 'bg-ministry-blue hover:bg-ministry-gold'
             }`}>
-              {isPreorder ? 'Preorder' : 'Get Copy'}
+              {/* FOOTER BUTTON CHANGE */}
+              {/* If it is a Preorder, run the function. If not, act as a normal link. */}
+              {isPreorder ? (
+                <button 
+                  onClick={onPreorder}
+                  className="inline-flex items-center justify-center px-4 py-2 bg-gray-900 text-white text-xs font-bold uppercase tracking-widest rounded-sm hover:bg-ministry-gold transition shadow-sm"
+                >
+                  Preorder
+                </button>
+              ) : (
+                <a href={book.BuyLink} className="inline-flex items-center justify-center px-4 py-2 bg-ministry-blue text-white text-xs font-bold uppercase tracking-widest rounded-sm hover:bg-ministry-gold transition shadow-sm">
+                  Get Copy
+                </a>
+              )}
             </a>
         </div>
       </div>
@@ -153,6 +178,14 @@ function App() {
   const [formStatus, setFormStatus] = useState('');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [userCurrency, setUserCurrency] = useState('USD'); // Default to USD
+  const [preorderModalOpen, setPreorderModalOpen] = useState(false);
+  const [selectedBook, setSelectedBook] = useState(null);
+
+  // Function to open the modal
+  const handlePreorderClick = (book) => {
+    setSelectedBook(book);
+    setPreorderModalOpen(true);
+  };
   
   // --- SMOOTH CONTINUOUS SCROLL LOGIC ---
   // --- ROBUST SCROLL LOGIC ---
@@ -446,8 +479,10 @@ function App() {
               // STRICT CARD SIZING
               <div key={book.id} className="w-full md:w-[350px] flex-shrink-0">
                 <BookCard 
-                    book={book} 
-                    userCurrency={userCurrency} 
+                  key={book.id} 
+                  book={book} 
+                  userCurrency={userCurrency} 
+                  onPreorder={() => handlePreorderClick(book)} // <--- NEW PROP
                 />
               </div>
             ))}
@@ -554,7 +589,99 @@ function App() {
             </div>
         </div>
       )}
+      {/* ========================================= */}
+      {/* PREORDER LAUNCH MODAL */}
+      {/* ========================================= */}
+      {preorderModalOpen && selectedBook && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-ministry-blue/90 backdrop-blur-sm p-4 animate-fade-in">
+            
+            <div className="bg-white w-full max-w-4xl rounded-sm shadow-2xl overflow-hidden flex flex-col md:flex-row relative">
+                
+                {/* Close Button */}
+                <button 
+                    onClick={() => setPreorderModalOpen(false)}
+                    className="absolute top-4 right-4 z-50 text-gray-400 hover:text-red-500 text-2xl font-bold bg-white/80 rounded-full w-8 h-8 flex items-center justify-center"
+                >
+                    ✕
+                </button>
 
+                {/* LEFT: Book Cover Visuals */}
+                <div className="md:w-5/12 bg-gray-100 flex items-center justify-center p-8 relative overflow-hidden">
+                    {/* Background Pattern */}
+                    <div className="absolute inset-0 opacity-10 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]"></div>
+                    
+                    {/* The Book */}
+                    <div className="relative w-48 shadow-[0_20px_50px_rgba(0,0,0,0.3)] transform rotate-[-5deg] hover:rotate-0 transition duration-500 z-10">
+                        {selectedBook.CoverArt && (
+                            <img src={selectedBook.CoverArt.url} alt="Cover" className="w-full rounded-sm" />
+                        )}
+                    </div>
+                </div>
+
+                {/* RIGHT: Launch Event Info */}
+                <div className="md:w-7/12 p-8 md:p-12 flex flex-col text-left">
+                    
+                    <div className="inline-block border-b-2 border-ministry-gold pb-1 mb-4 w-max">
+                        <span className="text-ministry-gold font-bold tracking-[0.2em] uppercase text-xs">Official Book Launch</span>
+                    </div>
+                    
+                    <h2 className="text-3xl md:text-4xl font-serif font-bold text-ministry-blue mb-4 leading-tight">
+                        {selectedBook.Title}
+                    </h2>
+
+                    <p className="text-gray-600 mb-8 leading-relaxed text-sm">
+                        Be among the first to receive this transformative work. 
+                        Preordering grants you exclusive access to the virtual launch event 
+                        and a signed copy upon release.
+                    </p>
+
+                    {/* EVENT DETAILS GRID */}
+                    <div className="grid grid-cols-2 gap-6 mb-8 border-t border-b border-gray-100 py-6">
+                        <div>
+                            <span className="block text-[10px] uppercase text-gray-400 font-bold tracking-widest mb-1">Date</span>
+                            <span className="text-ministry-blue font-bold text-lg">
+                                {new Date(selectedBook.LaunchDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}
+                            </span>
+                        </div>
+                        <div>
+                            <span className="block text-[10px] uppercase text-gray-400 font-bold tracking-widest mb-1">Platform</span>
+                            <span className="text-ministry-blue font-bold text-lg">Live on YouTube</span>
+                        </div>
+                        <div>
+                            <span className="block text-[10px] uppercase text-gray-400 font-bold tracking-widest mb-1">Time</span>
+                            <span className="text-ministry-blue font-bold text-lg">5:00 PM WAT</span>
+                        </div>
+                        <div>
+                            <span className="block text-[10px] uppercase text-gray-400 font-bold tracking-widest mb-1">Preorder Price</span>
+                            <span className="text-ministry-gold font-bold text-lg">
+                                {/* Calculate price display again or pass it down */}
+                                {selectedBook.LocalPrices?.find(p => p.Currency === userCurrency)?.Amount 
+                                  ? formatCurrency(selectedBook.LocalPrices.find(p => p.Currency === userCurrency).Amount, userCurrency)
+                                  : selectedBook.Price}
+                            </span>
+                        </div>
+                    </div>
+
+                    {/* CALL TO ACTION */}
+                    <div className="mt-auto">
+                        <a 
+                            href={selectedBook.BuyLink} 
+                            target="_blank" 
+                            rel="noreferrer"
+                            className="block w-full text-center bg-ministry-gold text-white py-4 font-bold uppercase tracking-widest hover:bg-ministry-blue hover:scale-[1.02] transition-all shadow-lg rounded-sm"
+                        >
+                            Secure Your Copy via Paystack
+                        </a>
+                        <p className="text-center text-xs text-gray-400 mt-3 flex items-center justify-center gap-1">
+                            <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                            Secure Payment handled by Paystack
+                        </p>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+      )}
     </div>
   );
 }
