@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import AudioPlayer from 'react-h5-audio-player';
 import emailjs from '@emailjs/browser';
@@ -39,63 +39,75 @@ const getSynopsisText = (synopsis) => {
 };
 
 // =========================================
-// COMPONENT: Book Card (Smart Pricing & Layout)
+// COMPONENT: Book Card (Smart Pricing + Preorder Logic)
 // =========================================
 const BookCard = ({ book, userCurrency }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const synopsis = getSynopsisText(book.Synopsis);
   
-  const formattedDate = new Date(book.publishedAt).toLocaleDateString('en-US', {
-    year: 'numeric', month: 'short', day: 'numeric',
-  });
+  // DATE LOGIC
+  const today = new Date();
+  const launchDate = book.LaunchDate ? new Date(book.LaunchDate) : null;
+  
+  // Is this book coming in the future?
+  const isPreorder = launchDate && launchDate > today;
 
-  // --- PRICING LOGIC ---
-  // 1. Start with default Price field
+  // Format the visual date
+  const formattedLaunchDate = launchDate ? launchDate.toLocaleDateString('en-US', {
+    month: 'short', day: 'numeric', year: 'numeric'
+  }) : '';
+
+  // PRICING LOGIC
   let displayPrice = book.Price; 
-
-  // 1. Get the pricing list (Check both Capital 'L' and small 'l')
-  // Strapi usually sends 'localPrices', but we check 'LocalPrices' just in case.
-  const prices = book.localPrices || book.LocalPrices || [];
-
-  // 2. Check if we have data
-  if (prices.length > 0) {
-    // Try to find the user's local currency
-    const localMatch = prices.find(p => p.Currency === userCurrency);
-    // Try to find USD as a fallback
-    const usdMatch = prices.find(p => p.Currency === 'USD');
-
-    if (localMatch) {
-      displayPrice = formatCurrency(localMatch.Amount, localMatch.Currency);
-    } else if (usdMatch) {
-      displayPrice = formatCurrency(usdMatch.Amount, 'USD');
-    }
+  if (book.LocalPrices && book.LocalPrices.length > 0) {
+    const localMatch = book.LocalPrices.find(p => p.Currency === userCurrency);
+    const usdMatch = book.LocalPrices.find(p => p.Currency === 'USD');
+    if (localMatch) displayPrice = formatCurrency(localMatch.Amount, localMatch.Currency);
+    else if (usdMatch) displayPrice = formatCurrency(usdMatch.Amount, 'USD');
   }
 
   return (
-    <div className="group bg-white rounded-sm shadow-sm hover:shadow-xl transition duration-300 border border-gray-100 flex flex-col h-full">
-      {/* Image */}
-      <div className="h-64 sm:h-80 overflow-hidden bg-gray-100 relative flex-shrink-0">
+    <div className="group bg-white rounded-sm shadow-[0_10px_40px_-15px_rgba(0,0,0,0.1)] hover:shadow-[0_20px_50px_-10px_rgba(0,35,102,0.2)] hover:-translate-y-2 transition-all duration-500 border-t-4 border-transparent hover:border-ministry-gold flex flex-col h-full overflow-hidden relative">
+      {/* IMAGE AREA */}
+
+      {/* 1. IMAGE AREA */}
+      <div className="h-64 sm:h-80 w-full overflow-hidden bg-gray-100 relative flex-shrink-0">
         {book.CoverArt && (
           <img src={book.CoverArt.url} alt={book.Title} className="w-full h-full object-cover transform group-hover:scale-105 transition duration-500" />
         )}
+        
+        {/* PREORDER BADGE (Only shows if coming soon) */}
+        {isPreorder && (
+            <div className="absolute top-4 right-4 bg-ministry-gold text-white text-[10px] font-bold px-3 py-1 uppercase tracking-widest shadow-md">
+                Coming Soon
+            </div>
+        )}
       </div>
 
-      {/* Content */}
+      {/* 2. CONTENT AREA */}
       <div className="p-6 flex flex-col flex-grow relative">
         <h3 className="text-xl font-bold text-gray-900 mb-3 font-serif leading-tight">{book.Title}</h3>
         
-        {/* Synopsis Area */}
         <div className="relative mb-4 flex-grow">
-            <p className={`text-gray-600 text-sm transition-all duration-300 ${!isExpanded ? 'line-clamp-3 md:line-clamp-none' : ''}`}>
+            {/* LOGIC CHANGE:
+              - Mobile: line-clamp-3 (Compact)
+              - Desktop: line-clamp-6 (Shows more, but prevents 300-word walls)
+              - If isExpanded is true: Show everything
+            */}
+            <p className={`text-gray-600 text-sm transition-all duration-300 ${
+                !isExpanded ? 'line-clamp-3 md:line-clamp-6' : ''
+            }`}>
                 {synopsis}
             </p>
-           {/* Mobile Expand Button */}
-           {synopsis && !isExpanded && (
-              <button onClick={() => setIsExpanded(true)} className="md:hidden mt-2 text-xs font-bold text-ministry-blue uppercase tracking-wider flex items-center focus:outline-none hover:text-ministry-gold">
-                View More ↓
-              </button>
-           )}
-           {/* Mobile Collapse Button */}
+           {/* TOGGLE BUTTON (Visible on ALL devices now) */}
+            {synopsis && synopsis.length > 150 && (
+                <button 
+                    onClick={() => setIsExpanded(!isExpanded)}
+                    className="mt-2 text-xs font-bold text-ministry-blue uppercase tracking-wider flex items-center focus:outline-none hover:text-ministry-gold"
+                >
+                    {isExpanded ? 'Show Less ↑' : 'Read Full Synopsis ↓'}
+                </button>
+            )}
            {isExpanded && (
               <button onClick={() => setIsExpanded(false)} className="md:hidden mt-2 text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center focus:outline-none hover:text-ministry-blue">
                 Show Less ↑
@@ -103,14 +115,22 @@ const BookCard = ({ book, userCurrency }) => {
            )}
         </div>
 
-        {/* Footer Row: Date | Price | Button */}
+        {/* 3. FOOTER */}
         <div className="mt-auto pt-4 border-t border-gray-50 flex items-center justify-between bg-gray-50/50 -mx-6 -mb-6 p-4">
             <div className="flex flex-col">
-                <span className="text-[10px] uppercase tracking-widest text-gray-400 font-bold">{formattedDate}</span>
+                {/* Show Launch Date if Preorder, otherwise show 'Published' label */}
+                <span className="text-[10px] uppercase tracking-widest text-gray-400 font-bold">
+                    {isPreorder ? `Launches ${formattedLaunchDate}` : 'Price'}
+                </span>
                 <span className="text-ministry-gold font-bold text-lg leading-none mt-1">{displayPrice}</span>
             </div>
-            <a href={book.BuyLink} className="inline-flex items-center justify-center px-4 py-2 bg-ministry-blue text-white text-xs font-bold uppercase tracking-widest rounded-sm hover:bg-ministry-gold transition shadow-sm">
-              Get Copy
+            
+            <a href={book.BuyLink} className={`inline-flex items-center justify-center px-4 py-2 text-white text-xs font-bold uppercase tracking-widest rounded-sm transition shadow-sm ${
+                isPreorder 
+                ? 'bg-gray-900 hover:bg-ministry-gold' // Black button for Preorder
+                : 'bg-ministry-blue hover:bg-ministry-gold' // Blue button for Get Copy
+            }`}>
+              {isPreorder ? 'Preorder' : 'Get Copy'}
             </a>
         </div>
       </div>
@@ -133,7 +153,36 @@ function App() {
   const [formStatus, setFormStatus] = useState('');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [userCurrency, setUserCurrency] = useState('USD'); // Default to USD
+  
+  // --- SMOOTH CONTINUOUS SCROLL LOGIC ---
+  // --- ROBUST SCROLL LOGIC ---
+  const bookScrollRef = useRef(null);
+  const scrollInterval = useRef(null);
 
+  const startScrolling = (direction) => {
+    // 1. Clear any existing timer to prevent chaos
+    if (scrollInterval.current) clearInterval(scrollInterval.current);
+
+    // 2. Start the loop
+    scrollInterval.current = setInterval(() => {
+      if (bookScrollRef.current) {
+        // console.log("Moving " + direction); // Uncomment to debug
+        const speed = 10; // Speed of movement
+        if (direction === 'left') {
+          bookScrollRef.current.scrollLeft -= speed;
+        } else {
+          bookScrollRef.current.scrollLeft += speed;
+        }
+      }
+    }, 10); // Run every 10 milliseconds
+  };
+
+  const stopScrolling = () => {
+    if (scrollInterval.current) {
+      clearInterval(scrollInterval.current);
+      scrollInterval.current = null;
+    }
+  };
   // 2. DATA FETCHING (Using useEffect)
   useEffect(() => {
     const fetchData = async () => {
@@ -270,37 +319,67 @@ function App() {
         )}
       </nav>
 
-      {/* HERO SECTION */}
-      <header id="home" className="relative pt-20 min-h-screen flex items-center bg-gray-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
-          <div className="text-center md:text-left order-2 md:order-1">
-             <div className="inline-block border-b-2 border-ministry-gold pb-2 mb-4">
+      {/* HERO SECTION - Fully Responsive (Mobile Center + iPad Stacked) */}
+      <header id="home" className="relative pt-24 pb-12 min-h-screen flex items-center bg-gray-50 overflow-hidden">
+        
+        {/* The Container */}
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-8 items-center">
+          
+          {/* TEXT CONTENT */}
+          {/* lg:text-left ensures text centers on mobile/iPad but aligns left on laptop */}
+          <div className="text-center lg:text-left order-2 lg:order-1 relative z-10">
+            <div className="inline-block border-b-2 border-ministry-gold pb-2 mb-4">
                 <span className="text-ministry-gold font-bold tracking-[0.2em] uppercase text-xs">Official Ministry Portfolio</span>
-             </div>
-             <h1 className="text-5xl md:text-7xl font-serif font-bold text-ministry-blue leading-tight mb-6">
-               Jude <br/><span className="text-ministry-gold">Jesururu</span>
-             </h1>
-             <p className="text-lg text-gray-600 mb-8 max-w-lg mx-auto md:mx-0">
-               Proclaiming the Kingdom through worship, writing, and filmmaking. Bridging the gap between faith and excellence.
-             </p>
-             <div className="flex flex-col sm:flex-row gap-4 justify-center md:justify-start">
-               <button onClick={() => setShowModal(true)} className="bg-ministry-blue text-white px-8 py-4 font-bold tracking-widest uppercase hover:bg-ministry-gold transition shadow-lg">
-                 Invite For Ministry
-               </button>
-               <button onClick={() => scrollToSection('books')} className="border-2 border-ministry-blue text-ministry-blue px-8 py-4 font-bold tracking-widest uppercase hover:bg-ministry-blue hover:text-white transition">
-                 Resources
-               </button>
-             </div>
+            </div>
+            <h1 className="text-5xl md:text-7xl font-serif font-bold text-ministry-blue leading-tight mb-6">
+              Jude <br/><span className="text-gold-metallic">Jesururu</span>
+            </h1>
+            <p className="text-lg text-gray-600 mb-8 max-w-lg mx-auto lg:mx-0 leading-relaxed">
+              Proclaiming the Kingdom through worship, writing, and filmmaking. Bridging the gap between faith and excellence.
+            </p>
+            <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start">
+              <button onClick={() => setShowModal(true)} className="bg-ministry-blue text-white px-8 py-4 font-bold tracking-widest uppercase hover:bg-ministry-gold transition shadow-lg rounded-sm">
+                Invite For Ministry
+              </button>
+              <button onClick={() => scrollToSection('books')} className="border-2 border-ministry-blue text-ministry-blue px-8 py-4 font-bold tracking-widest uppercase hover:bg-ministry-blue hover:text-white transition rounded-sm">
+                Resources
+              </button>
+            </div>
           </div>
-          {/* Floating Portrait */}
-          <div className="relative order-1 md:order-2 flex justify-center items-center">
-             <div className="relative h-[450px] w-[320px] md:h-[600px] md:w-[420px]">
-                <div className="absolute top-5 right-5 w-full h-full border-[1px] border-ministry-gold/50 rounded-sm -z-0"></div>
-                <div className="relative h-full w-full bg-gray-100 rounded-sm shadow-[0_20px_50px_rgba(0,35,102,0.2)] overflow-hidden z-10">
-                   <img src="/me.jpg" alt="Jude Jesururu" className="w-full h-full object-cover" onError={(e) => {e.target.src = 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?fit=crop&w=800&q=80'}} /> 
-                </div>
-             </div>
+
+          {/* IMAGE CONTENT */}
+          {/* order-1 puts it on top for Mobile/iPad. lg:order-2 puts it right for Laptop */}
+          <div className="relative order-1 lg:order-2 flex justify-center items-center mt-6 lg:mt-0">
+            
+            {/* 1. mx-auto: Centers it on mobile
+                2. w-[300px]: Slightly smaller on mobile to prevent overflow
+                3. sm:w-[380px]: Good size for iPad
+                4. lg:w-[420px]: Full size for Laptop 
+            */}
+            <div className="relative h-[420px] w-[300px] sm:h-[550px] sm:w-[380px] lg:h-[600px] lg:w-[420px] animate-float mx-auto">
+
+              {/* Glow Behind */}
+              <div className="absolute -inset-4 bg-ministry-gold/30 blur-3xl rounded-[30px] -z-10"></div>
+
+              {/* Gradient Frame */}
+              <div className="h-full w-full bg-gradient-to-tr from-[#BF953F] via-[#FCF6BA] to-[#B38728] p-[3px] rounded-[24px] shadow-[0_25px_60px_-15px_rgba(0,35,102,0.4)] relative z-10">
+                  
+                  {/* Inner Container */}
+                  <div className="h-full w-full bg-ministry-blue rounded-[21px] overflow-hidden relative">
+                      {/* Inner Shadow for depth */}
+                      <div className="absolute inset-0 shadow-[inset_0_0_40px_rgba(0,0,0,0.2)] z-20 pointer-events-none"></div>
+                      
+                      <img
+                          src="/me.jpg"
+                          alt="Jude Jesururu"
+                          className="w-full h-full object-cover"
+                          onError={(e) => {e.target.src = 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?fit=crop&w=800&q=80'}}
+                      />
+                  </div>
+              </div>
+            </div>
           </div>
+
         </div>
       </header>
 
@@ -317,22 +396,63 @@ function App() {
         </div>
       </section>
 
-      {/* BOOKS SECTION (Using the New Component) */}
-      <section id="books" className="py-24 bg-ministry-light">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-16">
+      {/* BOOKS SECTION (Carousel Mode) */}
+      <section id="books" className="py-24 bg-ministry-light overflow-hidden">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative">
+          
+          {/* Header */}
+          <div className="text-center mb-12">
             <h2 className="text-4xl font-serif font-bold text-ministry-blue mb-4">Books & Resources</h2>
             <div className="w-20 h-1 bg-ministry-gold mx-auto"></div>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10 items-start">
+
+          {/* ARROWS (Only visible on Desktop/Tablet) */}
+          
+          {/* ARROWS (Hover to Scroll) */}
+          
+          {/* Left Arrow */}
+          <button 
+            onMouseEnter={() => startScrolling('left')}
+            onMouseLeave={stopScrolling}
+            onClick={() => {
+              // Manual Click Jump
+              if(bookScrollRef.current) bookScrollRef.current.scrollLeft -= 300; 
+            }}
+            className="hidden md:flex absolute left-0 top-1/2 -translate-y-1/2 z-50 w-12 h-12 items-center justify-center bg-white shadow-2xl rounded-full text-ministry-blue border-2 border-ministry-gold cursor-pointer hover:scale-110 active:scale-95 transition-all"
+          >
+            ←
+          </button>
+
+          {/* Right Arrow */}
+          <button 
+            onMouseEnter={() => startScrolling('right')}
+            onMouseLeave={stopScrolling}
+            onClick={() => {
+              // Manual Click Jump
+              if(bookScrollRef.current) bookScrollRef.current.scrollLeft += 300; 
+            }}
+            className="hidden md:flex absolute right-0 top-1/2 -translate-y-1/2 z-50 w-12 h-12 items-center justify-center bg-white shadow-2xl rounded-full text-ministry-blue border-2 border-ministry-gold cursor-pointer hover:scale-110 active:scale-95 transition-all"
+          >
+            →
+          </button>
+
+          {/* BOOK CONTAINER */}
+          <div 
+            ref={bookScrollRef}
+            className="flex flex-col md:flex-row gap-8 overflow-x-auto pb-10 px-4 scrollbar-hide"
+            style={{ scrollBehavior: 'auto' }} // <--- CRITICAL: MUST BE 'auto', NOT 'smooth'
+          >
             {books.map((book) => (
-              <BookCard 
-                key={book.id} 
-                book={book} 
-                userCurrency={userCurrency} 
-              />
+              // STRICT CARD SIZING
+              <div key={book.id} className="w-full md:w-[350px] flex-shrink-0">
+                <BookCard 
+                    book={book} 
+                    userCurrency={userCurrency} 
+                />
+              </div>
             ))}
           </div>
+
         </div>
       </section>
 
