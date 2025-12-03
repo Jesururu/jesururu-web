@@ -41,7 +41,7 @@ const getSynopsisText = (synopsis) => {
 // =========================================
 // COMPONENT: Book Card (Fixed Duplicate Buttons)
 // =========================================
-const BookCard = ({ book, userCurrency, onPreorder }) => {
+const BookCard = ({ book, userCurrency, onPreorder, onPurchase }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   
   // Helper to handle text safely
@@ -144,17 +144,32 @@ const BookCard = ({ book, userCurrency, onPreorder }) => {
             }`}>
               {/* FOOTER BUTTON CHANGE */}
               {/* If it is a Preorder, run the function. If not, act as a normal link. */}
+              {/* FOOTER BUTTON LOGIC */}
               {isPreorder ? (
-                <button 
-                  onClick={onPreorder}
-                  className="inline-flex items-center justify-center px-4 py-2 bg-gray-900 text-white text-xs font-bold uppercase tracking-widest rounded-sm hover:bg-ministry-gold transition shadow-sm"
-                >
-                  Preorder
-                </button>
+                  // SCENARIO 1: PREORDER -> Open Event Modal
+                  <button 
+                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); onPreorder(); }}
+                      className="inline-flex items-center justify-center px-4 py-2 bg-gray-900 text-white text-xs font-bold uppercase tracking-widest rounded-sm hover:bg-ministry-gold transition shadow-sm z-20 relative"
+                  >
+                      Preorder
+                  </button>
               ) : (
-                <a href={book.BuyLink} className="inline-flex items-center justify-center px-4 py-2 bg-ministry-blue text-white text-xs font-bold uppercase tracking-widest rounded-sm hover:bg-ministry-gold transition shadow-sm">
-                  Get Copy
-                </a>
+                  // SCENARIO 2: POST-LAUNCH
+                  // Check: Do we have multiple formats? (Ebook OR Audio exists?)
+                  (book.EbookLink || book.AudiobookLink) ? (
+                      // YES: Open the "Choose Format" Modal
+                      <button 
+                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onPurchase(); }} // <--- Needs onPurchase prop
+                          className="inline-flex items-center justify-center px-4 py-2 bg-ministry-blue text-white text-xs font-bold uppercase tracking-widest rounded-sm hover:bg-ministry-gold transition shadow-sm z-20 relative"
+                      >
+                          Get Copy
+                      </button>
+                  ) : (
+                      // NO: Just go straight to the Hardcover link (Default)
+                      <a href={book.BuyLink} className="inline-flex items-center justify-center px-4 py-2 bg-ministry-blue text-white text-xs font-bold uppercase tracking-widest rounded-sm hover:bg-ministry-gold transition shadow-sm z-20 relative">
+                          Get Copy
+                      </a>
+                  )
               )}
             </a>
         </div>
@@ -180,6 +195,13 @@ function App() {
   const [userCurrency, setUserCurrency] = useState('USD'); // Default to USD
   const [preorderModalOpen, setPreorderModalOpen] = useState(false);
   const [selectedBook, setSelectedBook] = useState(null);
+  const [purchaseModalOpen, setPurchaseModalOpen] = useState(false);
+  
+  // Logic: Opens the "Select Format" modal
+  const handlePurchaseClick = (book) => {
+    setSelectedBook(book);
+    setPurchaseModalOpen(true);
+  };
 
   // Function to open the modal
   const handlePreorderClick = (book) => {
@@ -482,7 +504,8 @@ function App() {
                   key={book.id} 
                   book={book} 
                   userCurrency={userCurrency} 
-                  onPreorder={() => handlePreorderClick(book)} // <--- NEW PROP
+                  onPreorder={() => handlePreorderClick(book)}
+                  onPurchase={() => handlePurchaseClick(book)} // <--- NEW connection
                 />
               </div>
             ))}
@@ -590,27 +613,24 @@ function App() {
         </div>
       )}
       {/* ========================================= */}
-      {/* PREORDER LAUNCH MODAL */}
+      {/* PREORDER LAUNCH MODAL (FULLY DYNAMIC)     */}
       {/* ========================================= */}
       {preorderModalOpen && selectedBook && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-ministry-blue/90 backdrop-blur-sm p-4 animate-fade-in">
             
-            <div className="bg-white w-full max-w-4xl rounded-sm shadow-2xl overflow-hidden flex flex-col md:flex-row relative">
+            <div className="bg-white w-full max-w-5xl rounded-sm shadow-2xl overflow-hidden flex flex-col md:flex-row relative max-h-[90vh] md:max-h-none overflow-y-auto md:overflow-visible">
                 
                 {/* Close Button */}
                 <button 
                     onClick={() => setPreorderModalOpen(false)}
-                    className="absolute top-4 right-4 z-50 text-gray-400 hover:text-red-500 text-2xl font-bold bg-white/80 rounded-full w-8 h-8 flex items-center justify-center"
+                    className="absolute top-4 right-4 z-50 text-gray-400 hover:text-red-500 text-2xl font-bold bg-white/80 rounded-full w-8 h-8 flex items-center justify-center shadow-sm"
                 >
                     ✕
                 </button>
 
                 {/* LEFT: Book Cover Visuals */}
-                <div className="md:w-5/12 bg-gray-100 flex items-center justify-center p-8 relative overflow-hidden">
-                    {/* Background Pattern */}
+                <div className="md:w-5/12 bg-gray-100 flex items-center justify-center p-8 relative overflow-hidden min-h-[300px]">
                     <div className="absolute inset-0 opacity-10 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]"></div>
-                    
-                    {/* The Book */}
                     <div className="relative w-48 shadow-[0_20px_50px_rgba(0,0,0,0.3)] transform rotate-[-5deg] hover:rotate-0 transition duration-500 z-10">
                         {selectedBook.CoverArt && (
                             <img src={selectedBook.CoverArt.url} alt="Cover" className="w-full rounded-sm" />
@@ -619,66 +639,163 @@ function App() {
                 </div>
 
                 {/* RIGHT: Launch Event Info */}
-                <div className="md:w-7/12 p-8 md:p-12 flex flex-col text-left">
+                <div className="md:w-7/12 p-8 md:p-10 flex flex-col text-left">
                     
                     <div className="inline-block border-b-2 border-ministry-gold pb-1 mb-4 w-max">
-                        <span className="text-ministry-gold font-bold tracking-[0.2em] uppercase text-xs">Official Book Launch</span>
+                        <span className="text-ministry-gold font-bold tracking-[0.2em] uppercase text-xs">Official Hybrid Launch</span>
                     </div>
                     
-                    <h2 className="text-3xl md:text-4xl font-serif font-bold text-ministry-blue mb-4 leading-tight">
+                    <h2 className="text-3xl font-serif font-bold text-ministry-blue mb-4 leading-tight">
                         {selectedBook.Title}
                     </h2>
 
-                    <p className="text-gray-600 mb-8 leading-relaxed text-sm">
-                        Be among the first to receive this transformative work. 
-                        Preordering grants you exclusive access to the virtual launch event 
-                        and a signed copy upon release.
+                    <p className="text-gray-600 mb-6 leading-relaxed text-sm">
+                        Preordering secures your copy and grants you exclusive access to the Launch Event. 
+                        Join us physically or stream live from anywhere in the world.
                     </p>
 
                     {/* EVENT DETAILS GRID */}
-                    <div className="grid grid-cols-2 gap-6 mb-8 border-t border-b border-gray-100 py-6">
-                        <div>
-                            <span className="block text-[10px] uppercase text-gray-400 font-bold tracking-widest mb-1">Date</span>
-                            <span className="text-ministry-blue font-bold text-lg">
-                                {new Date(selectedBook.LaunchDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}
-                            </span>
+                    <div className="bg-gray-50 border border-gray-100 p-6 rounded-sm mb-6 text-sm">
+                        {/* Row 1: Date & Time (Dynamic) */}
+                        <div className="flex justify-between items-center mb-6 border-b border-gray-200 pb-4">
+                            <div>
+                                <span className="block text-[10px] uppercase text-gray-400 font-bold tracking-widest mb-1">Date</span>
+                                <span className="text-ministry-blue font-bold text-lg">
+                                    {/* Uses LaunchDate from Strapi */}
+                                    {selectedBook.LaunchDate 
+                                      ? new Date(selectedBook.LaunchDate).toLocaleDateString('en-US', { weekday: 'short', month: 'long', day: 'numeric' })
+                                      : 'Date TBA'}
+                                </span>
+                            </div>
+                            <div className="text-right">
+                                <span className="block text-[10px] uppercase text-gray-400 font-bold tracking-widest mb-1">Time</span>
+                                <span className="text-ministry-blue font-bold text-lg">
+                                    {/* Uses LaunchTime from Strapi */}
+                                    {selectedBook.LaunchTime || 'Time TBA'}
+                                </span>
+                            </div>
                         </div>
-                        <div>
-                            <span className="block text-[10px] uppercase text-gray-400 font-bold tracking-widest mb-1">Platform</span>
-                            <span className="text-ministry-blue font-bold text-lg">Live on YouTube</span>
+
+                        {/* Row 2: Hybrid Options (Dynamic) */}
+                        <div className="space-y-4">
+                            <div className="flex items-start">
+                                <span className="text-xl mr-3">🏛️</span>
+                                <div>
+                                    <span className="block text-xs font-bold text-ministry-blue uppercase">Physical Experience</span>
+                                    <span className="text-sm text-gray-600 font-medium">
+                                        {/* Uses PhysicalVenue from Strapi */}
+                                        {selectedBook.PhysicalVenue || 'Venue to be announced'}
+                                    </span>
+                                </div>
+                            </div>
+                            <div className="flex items-start">
+                                <span className="text-xl mr-3">💻</span>
+                                <div>
+                                    <span className="block text-xs font-bold text-ministry-blue uppercase">Virtual Experience</span>
+                                    <span className="text-sm text-gray-600 font-medium">
+                                        {/* Uses VirtualPlatform from Strapi */}
+                                        {selectedBook.VirtualPlatform || 'Details sent via email'}
+                                    </span>
+                                </div>
+                            </div>
                         </div>
-                        <div>
-                            <span className="block text-[10px] uppercase text-gray-400 font-bold tracking-widest mb-1">Time</span>
-                            <span className="text-ministry-blue font-bold text-lg">5:00 PM WAT</span>
-                        </div>
-                        <div>
-                            <span className="block text-[10px] uppercase text-gray-400 font-bold tracking-widest mb-1">Preorder Price</span>
-                            <span className="text-ministry-gold font-bold text-lg">
-                                {/* Calculate price display again or pass it down */}
+                    </div>
+
+                    {/* PRICE & CALL TO ACTION */}
+                    <div className="mt-auto">
+                        <div className="flex justify-between items-end mb-3">
+                             <span className="text-xs text-gray-500 font-bold uppercase tracking-widest">Preorder Bundle</span>
+                             <span className="text-ministry-gold font-bold text-2xl">
                                 {selectedBook.LocalPrices?.find(p => p.Currency === userCurrency)?.Amount 
                                   ? formatCurrency(selectedBook.LocalPrices.find(p => p.Currency === userCurrency).Amount, userCurrency)
                                   : selectedBook.Price}
                             </span>
                         </div>
-                    </div>
 
-                    {/* CALL TO ACTION */}
-                    <div className="mt-auto">
                         <a 
                             href={selectedBook.BuyLink} 
                             target="_blank" 
                             rel="noreferrer"
                             className="block w-full text-center bg-ministry-gold text-white py-4 font-bold uppercase tracking-widest hover:bg-ministry-blue hover:scale-[1.02] transition-all shadow-lg rounded-sm"
                         >
-                            Secure Your Copy via Paystack
+                            Secure Seat & Copy (Paystack)
                         </a>
-                        <p className="text-center text-xs text-gray-400 mt-3 flex items-center justify-center gap-1">
-                            <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-                            Secure Payment handled by Paystack
+                        <p className="text-center text-[10px] text-gray-400 mt-3">
+                            You will select your attendance preference (Physical/Virtual) during checkout.
                         </p>
                     </div>
 
                 </div>
+            </div>
+        </div>
+      )}
+      {/* ========================================= */}
+      {/* PURCHASE OPTIONS MODAL (POST-LAUNCH)      */}
+      {/* ========================================= */}
+      {purchaseModalOpen && selectedBook && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
+            <div className="bg-white w-full max-w-md p-8 rounded-sm shadow-2xl relative text-center">
+                
+                <button onClick={() => setPurchaseModalOpen(false)} className="absolute top-4 right-4 text-gray-400 hover:text-red-500 font-bold">✕</button>
+                
+                <h2 className="text-2xl font-serif font-bold text-ministry-blue mb-2">Select Format</h2>
+                <p className="text-gray-500 text-sm mb-8">Choose how you would like to experience this book.</p>
+
+                <div className="space-y-4">
+                    
+                    {/* OPTION 1: HARDCOVER (Paystack) */}
+                    {selectedBook.BuyLink && (
+                        <a href={selectedBook.BuyLink} target="_blank" rel="noreferrer" className="group flex items-center justify-between p-4 border border-gray-200 hover:border-ministry-gold hover:bg-gray-50 transition rounded-sm">
+                            <div className="flex items-center">
+                                <span className="text-2xl mr-4">📖</span>
+                                <div className="text-left">
+                                    <span className="block font-bold text-ministry-blue">Hardcover Copy</span>
+                                    <span className="text-xs text-gray-500">Delivered via Paystack</span>
+                                </div>
+                            </div>
+                            <span className="text-ministry-gold font-bold">
+                                {selectedBook.LocalPrices?.find(p => p.Currency === userCurrency)?.Amount 
+                                  ? formatCurrency(selectedBook.LocalPrices.find(p => p.Currency === userCurrency).Amount, userCurrency)
+                                  : selectedBook.Price}
+                            </span>
+                        </a>
+                    )}
+
+                    {/* OPTION 2: E-BOOK (Selar/Amazon) */}
+                    {selectedBook.EbookLink && (
+                        <a href={selectedBook.EbookLink} target="_blank" rel="noreferrer" className="group flex items-center justify-between p-4 border border-gray-200 hover:border-ministry-gold hover:bg-gray-50 transition rounded-sm">
+                            <div className="items-center flex">
+                                <span className="text-2xl mr-4">📱</span>
+                                <div className="text-left">
+                                    <span className="block font-bold text-ministry-blue">E-Book Edition</span>
+                                    <span className="text-xs text-gray-500">Instant Download (Selar/Amazon)</span>
+                                </div>
+                            </div>
+                            <span className="text-xs font-bold uppercase tracking-widest text-gray-400 group-hover:text-ministry-blue">Get Link →</span>
+                        </a>
+                    )}
+
+                    {/* OPTION 3: AUDIOBOOK (Audible) */}
+                    {selectedBook.AudiobookLink && (
+                        <a href={selectedBook.AudiobookLink} target="_blank" rel="noreferrer" className="group flex items-center justify-between p-4 border border-gray-200 hover:border-ministry-gold hover:bg-gray-50 transition rounded-sm">
+                            <div className="items-center flex">
+                                <span className="text-2xl mr-4">🎧</span>
+                                <div className="text-left">
+                                    <span className="block font-bold text-ministry-blue">Audiobook</span>
+                                    <span className="text-xs text-gray-500">Listen on Audible</span>
+                                </div>
+                            </div>
+                            <span className="text-xs font-bold uppercase tracking-widest text-gray-400 group-hover:text-ministry-blue">Listen →</span>
+                        </a>
+                    )}
+                </div>
+
+                <div className="mt-6 pt-6 border-t border-gray-100">
+                    <p className="text-[10px] text-gray-400 uppercase tracking-widest">
+                        Official Ministry Resources
+                    </p>
+                </div>
+
             </div>
         </div>
       )}
