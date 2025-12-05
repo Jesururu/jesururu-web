@@ -288,3 +288,43 @@ html, body, #root {
     -ms-overflow-style: none; 
     scrollbar-width: none; 
 }
+
+/* --- PRINT STYLES (Fixes the Download Issue) --- */
+@media print {
+  /* 1. Hide the entire website */
+  body * {
+    visibility: hidden;
+  }
+
+  /* 2. Show ONLY the ticket */
+  #printable-ticket, #printable-ticket * {
+    visibility: visible;
+  }
+
+  /* 3. Position the ticket perfectly on the paper */
+  #printable-ticket {
+    position: fixed;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: auto;
+    margin: 0;
+    padding: 0;
+    background-color: #1a202c !important; /* Force dark background */
+    color: white !important; /* Force white text */
+    border: none;
+    box-shadow: none;
+  }
+
+  /* 4. Force Background Colors & Images (Crucial!) */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+  }
+
+  /* 5. Hide buttons (Download/Close) when printing */
+  .no-print {
+    display: none !important;
+  }
+}
