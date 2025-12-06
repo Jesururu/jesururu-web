@@ -164,7 +164,6 @@ const EventTicket = ({ event, isPast, onOpenEvent, onOpenGuestList, onOpenTeam, 
             <span className={`px-3 py-1 text-[10px] font-bold uppercase tracking-widest rounded-sm border ${isPast ? 'bg-gray-200 text-gray-500 border-gray-300' : 'bg-white/10 text-ministry-gold border-ministry-gold/30'}`}>
                {event.Category}
             </span>
-            {/* Added Divider and Spacing for readability */}
             <span className="text-white/20 hidden sm:inline">|</span>
             <span className="text-sm opacity-70 flex items-center gap-2 font-bold tracking-wide">
                🕒 {event.EventDateTime}
@@ -177,7 +176,6 @@ const EventTicket = ({ event, isPast, onOpenEvent, onOpenGuestList, onOpenTeam, 
          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 pt-4 mt-auto border-t border-white/10">
             <div className="text-sm opacity-70 flex items-center gap-2">📍 {event.Venue}</div>
             
-            {/* BUTTONS: Stacked correctly */}
             <div className="flex flex-col items-center sm:items-end gap-3 w-full sm:w-auto">
               {isPast ? (
                  <button disabled className="text-gray-400 text-xs font-bold uppercase tracking-widest">Event Ended</button>
@@ -356,8 +354,11 @@ function App() {
   // LOGIC: ADMIN & TEAM
   // =========================================
 
-  const handleAdminLogin = async (e, email, password) => {
+  const handleAdminLogin = async (e) => {
       e.preventDefault();
+      const form = e.target;
+      const email = form.email.value;
+      const password = form.password.value;
       try {
           const res = await axios.post(`${STRAPI_URL}/api/auth/local`, { identifier: email, password });
           setAdminUser({ token: res.data.jwt, username: res.data.user.username });
@@ -521,7 +522,6 @@ function App() {
                  if (!isNaN(d.getTime())) formattedDate = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
              } catch (err) {}
         }
-        // Format Time with AM/PM and add WAT
         if (rawTime) formattedTime = formatTimeWithAMPM(rawTime);
 
         const finalDateTime = (rawDate) ? `${formattedDate}, ${formattedTime ? formattedTime + ' WAT' : 'Time TBA'}` : 'Date & Time TBA';
@@ -547,7 +547,6 @@ function App() {
         let formattedDate = 'Date TBA';
         if(d) formattedDate = new Date(d).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
         
-        // Format Time
         let formattedTime = '';
         if (t) formattedTime = formatTimeWithAMPM(t);
 
@@ -557,7 +556,6 @@ function App() {
             id: `book-${book.id}`, Title: b.Title, Category: 'Book Launch',
             RawSortingDate: d, Venue: b.PhysicalVenue || 'TBA', isBook: true,
             EventDateTime: finalDateTime,
-            // UPDATED: Description text you requested
             Description: `Join us for the official launch.`,
             Poster: b.CoverArt, PriceTag: formattedPrice, WhatsAppLink: b.WhatsAppLink, Link: getBookLink(b), Team: b.TheTeam || []
         });
@@ -1055,6 +1053,56 @@ function App() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ADMIN LOGIN MODAL (RESTORED) */}
+      {showLoginModal && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4 animate-fade-in">
+              <div className="bg-white p-8 max-w-sm w-full rounded-sm shadow-2xl relative">
+                  
+                  {/* Close Button */}
+                  <button 
+                      onClick={() => setShowLoginModal(false)} 
+                      className="absolute top-2 right-4 text-gray-400 font-bold hover:text-red-500 text-xl"
+                  >
+                      ✕
+                  </button>
+                  
+                  <h2 className="text-xl font-bold text-ministry-blue mb-4 border-b border-gray-100 pb-2">Admin Access</h2>
+                  
+                  {/* Form Update: No arguments needed, just the function name */}
+                  <form onSubmit={handleAdminLogin}>
+                      <div className="mb-4">
+                          <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Email / Username</label>
+                          <input 
+                              name="email" 
+                              type="text" 
+                              required 
+                              className="w-full p-3 border border-gray-300 focus:border-ministry-gold outline-none text-sm rounded-sm" 
+                              placeholder="admin@example.com"
+                          />
+                      </div>
+                      <div className="mb-6">
+                          <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Password</label>
+                          <input 
+                              name="password" 
+                              type="password" 
+                              required 
+                              className="w-full p-3 border border-gray-300 focus:border-ministry-gold outline-none text-sm rounded-sm" 
+                              placeholder="••••••"
+                          />
+                      </div>
+                      
+                      {/* Submit Button */}
+                      <button 
+                          type="submit" 
+                          className="w-full bg-ministry-blue text-white py-3 font-bold uppercase text-xs tracking-widest hover:bg-ministry-gold transition shadow-lg"
+                      >
+                          Login
+                      </button>
+                  </form>
+              </div>
+          </div>
       )}
     </div>
   );
