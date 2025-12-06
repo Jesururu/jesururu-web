@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
+import { Scanner } from '@yudiel/react-qr-scanner';
 import AudioPlayer from 'react-h5-audio-player';
 import 'react-h5-audio-player/lib/styles.css';
 import './App.css';
@@ -190,6 +191,9 @@ const DynamicLinkButton = ({ link, icon }) => {
 // =========================================
 // COMPONENT: Event Ticket (Upcoming & Past)
 // =========================================
+// =========================================
+// COMPONENT: Event Ticket (Upcoming & Past)
+// =========================================
 const EventTicket = ({ event, isPast, onOpenEvent, onOpenGuestList, onOpenTeam, attendeeCount }) => {
   // Logic for the LEFT BOX (Countdown) - Uses RawSortingDate for logic
   const eventDate = new Date(event.RawSortingDate || new Date());
@@ -219,8 +223,6 @@ const EventTicket = ({ event, isPast, onOpenEvent, onOpenGuestList, onOpenTeam, 
          <span className="text-xs font-bold mt-2 uppercase">
              {isPast ? year : (diffDays <= 0 ? 'TODAY' : `${diffDays} Days`)}
          </span>
-         <div className="absolute -top-3 left-1/2 -translate-x-1/2 w-6 h-6 bg-gray-50 rounded-full"></div>
-         <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 w-6 h-6 bg-gray-50 rounded-full"></div>
       </div>
 
       {/* 2. POSTER */}
@@ -267,7 +269,8 @@ const EventTicket = ({ event, isPast, onOpenEvent, onOpenGuestList, onOpenTeam, 
                       onClick={() => onOpenEvent(event)}
                       className="bg-ministry-gold text-ministry-blue px-6 py-2 font-bold uppercase text-xs tracking-widest hover:bg-white transition shadow-lg rounded-sm w-full text-center"
                     >
-                      {event.isBook ? 'RSVP / Pre-order' : 'Register / RSVP'}
+                      {/* === FIXED LABEL HERE === */}
+                      {event.isBook ? 'RSVP for Launch' : 'Register / RSVP'}
                     </button>
                         
                     <div className="flex gap-4">
@@ -300,17 +303,18 @@ const EventTicket = ({ event, isPast, onOpenEvent, onOpenGuestList, onOpenTeam, 
 // MAIN APP COMPONENT
 // =========================================
 function App() {
+  // GATEKEEPER STATE
+  const [cameraActive, setCameraActive] = useState(false);
+  const [checkInCode, setCheckInCode] = useState('');
+  const [checkInStatus, setCheckInStatus] = useState(null); // 'success', 'error', 'warning'
+  const [checkInMessage, setCheckInMessage] = useState('');
+  const [scannedGuest, setScannedGuest] = useState(null);
   // --- STATE DEFINITIONS ---
   const [ticketSnapshot, setTicketSnapshot] = useState({ date: '', venue: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [adminUser, setAdminUser] = useState(null);
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [showAdminDashboard, setShowAdminDashboard] = useState(false);
-  
-  const [adminFormData, setAdminFormData] = useState({
-      targetId: '', targetType: 'event', 
-      ministerName: '', ministerRole: '', ministerBio: '', ministerPhoto: null 
-  });
 
   const [teamModalOpen, setTeamModalOpen] = useState(false);
   const [allRegistrations, setAllRegistrations] = useState([]);
@@ -343,6 +347,15 @@ function App() {
 
   // --- HANDLERS ---
 
+  const [adminFormData, setAdminFormData] = useState({
+      activeTab: 'gatekeeper', // <--- ADD THIS LINE
+      targetId: '', 
+      targetType: 'event', 
+      ministerName: '', 
+      ministerRole: '', 
+      ministerBio: '', 
+      ministerPhoto: null 
+  });
   // 1. CLICK EVENT (Open Modal + Save Snapshot)
   const handleEventClick = (eventItem) => {
     // A. SNAPSHOT: Freeze the pretty text data immediately
@@ -590,7 +603,76 @@ function App() {
 
     return { upcoming, past };
   };
+  // LOGIC: Verify and Check-In Attendee (With Live List Update)
+  const handleGateCheckIn = async (e) => {
+      e.preventDefault();
+      
+      if (!adminUser || !adminUser.token) {
+          setCheckInStatus('error');
+          setCheckInMessage('Session Expired. Please Re-login.');
+          return;
+      }
 
+      setCheckInStatus('loading');
+      setCheckInMessage('Verifying ticket...');
+      setScannedGuest(null);
+
+      const cleanCode = checkInCode.trim();
+
+      try {
+          // 1. SEARCH
+          const searchUrl = `${STRAPI_URL}/api/registrations?filters[ticketCode][$eq]=${cleanCode}&publicationState=preview`;
+          const res = await axios.get(searchUrl, { headers: { Authorization: `Bearer ${adminUser.token}` } });
+          
+          if (res.data.data.length === 0) {
+              setCheckInStatus('error');
+              setCheckInMessage('TICKET NOT FOUND');
+              return;
+          }
+
+          const guestRecord = res.data.data[0];
+          const guestData = guestRecord.attributes || guestRecord;
+          // Support both v4 (id) and v5 (documentId)
+          const updateId = guestRecord.documentId || guestRecord.id; 
+          const legacyId = guestRecord.id; // We need this for local state matching
+
+          // 2. CHECK STATUS
+          if (guestData.isCheckedIn) {
+              setCheckInStatus('warning');
+              setCheckInMessage(`ALREADY SCANNED! ${guestData.fullName} is inside.`);
+              setScannedGuest(guestData);
+              return;
+          }
+
+          // 3. UPDATE DATABASE
+          await axios.put(`${STRAPI_URL}/api/registrations/${updateId}`, {
+              data: { isCheckedIn: true }
+          }, {
+              headers: { Authorization: `Bearer ${adminUser.token}` }
+          });
+
+          // 4. UPDATE LOCAL STATE (The Live Fix)
+          // This ensures the Guest List updates instantly without a page refresh
+          setAllRegistrations(prevRegistrations => 
+              prevRegistrations.map(reg => 
+                  // Match by ID to find the right person and flip their status
+                  reg.id === legacyId ? { ...reg, isCheckedIn: true } : reg
+              )
+          );
+
+          // 5. SUCCESS
+          setCheckInStatus('success');
+          setCheckInMessage('ACCESS GRANTED');
+          setScannedGuest(guestData);
+          setCheckInCode(''); 
+
+      } catch (error) {
+          console.error("Gatekeeper Error:", error);
+          setCheckInStatus('error');
+          const errorMsg = error.response?.data?.error?.message || 'System Error.';
+          setCheckInMessage(errorMsg);
+      }
+  };
   const handleAdminLogin = async (e, email, password) => {
       e.preventDefault();
       try {
@@ -1200,16 +1282,63 @@ function App() {
                 <div className="p-0 overflow-y-auto custom-scrollbar bg-gray-50 flex-1">
                     {allRegistrations.filter(r => r.eventTitle === viewingGuestsFor).length > 0 ? (
                         <div className="divide-y divide-gray-200">
-                            {allRegistrations.filter(r => r.eventTitle === viewingGuestsFor).sort((a, b) => a.fullName.localeCompare(b.fullName)).map((reg, index) => (
-                                <div key={index} className="p-4 flex items-center justify-between hover:bg-white transition">
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-8 h-8 rounded-full bg-ministry-blue/10 text-ministry-blue flex items-center justify-center text-xs font-bold border border-ministry-blue/20">{reg.fullName.charAt(0)}</div>
-                                        <div><h4 className="text-sm font-bold text-gray-800">{reg.fullName.split(' ')[0]} {reg.fullName.split(' ')[1] ? reg.fullName.split(' ')[1][0] + '.' : ''}</h4><span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-sm ${reg.attendanceType === 'Virtual' ? 'bg-purple-100 text-purple-600' : 'bg-green-100 text-green-600'}`}>{reg.attendanceType || 'Physical'}</span></div>
+                        {allRegistrations
+                          .filter(r => r.eventTitle === viewingGuestsFor)
+                          .sort((a, b) => a.fullName.localeCompare(b.fullName))
+                          // Move Checked-In people to the top (Optional - remove if you prefer alphabetical only)
+                          .sort((a, b) => (b.isCheckedIn === a.isCheckedIn) ? 0 : b.isCheckedIn ? 1 : -1) 
+                          .map((reg, index) => (
+                                <div 
+                                    key={index} 
+                                    className={`px-4 py-3 flex items-center border-l-4 transition-all duration-300 ${
+                                        reg.isCheckedIn 
+                                        ? 'bg-green-50 border-green-500 shadow-inner' 
+                                        : 'hover:bg-gray-50 border-transparent border-b border-gray-100'
+                                    }`}
+                                >
+                                    {/* COLUMN 1: IDENTITY (40%) - Left Aligned */}
+                                    <div className="flex-[0.4] flex items-center gap-3 overflow-hidden">
+                                        {/* Square-ish Avatar */}
+                                        <div className={`w-9 h-9 flex-shrink-0 rounded-lg flex items-center justify-center text-xs font-bold border ${
+                                            reg.isCheckedIn 
+                                            ? 'bg-green-100 text-green-700 border-green-200' 
+                                            : 'bg-white border-gray-200 text-gray-400'
+                                        }`}>
+                                            {reg.fullName.charAt(0)}
+                                        </div>
+                                        <div className="min-w-0 flex flex-col">
+                                            <h4 className={`text-xs font-bold truncate ${reg.isCheckedIn ? 'text-green-900' : 'text-gray-700'}`}>
+                                                {reg.fullName.split(' ')[0]} {reg.fullName.split(' ')[1] ? reg.fullName.split(' ')[1][0] + '.' : ''}
+                                            </h4>
+                                            <span className="text-[9px] uppercase tracking-wide text-gray-400">
+                                                {reg.attendanceType || 'Physical'}
+                                            </span>
+                                        </div>
                                     </div>
-                                    <div className="text-right"><span className="block text-xs text-gray-400">{maskPhone(reg.phoneNumber)}</span></div>
+
+                                    {/* COLUMN 2: STATUS (30%) - Perfectly Centered */}
+                                    <div className="flex-[0.3] flex justify-center">
+                                        {reg.isCheckedIn ? (
+                                            <span className="bg-green-600 text-white text-[9px] font-bold px-3 py-1 rounded-full shadow-sm uppercase tracking-widest flex items-center gap-1 animate-pulse-once">
+                                                ✓ Inside
+                                            </span>
+                                        ) : (
+                                            <span className="text-[9px] font-bold text-gray-300 uppercase tracking-widest border border-gray-100 px-2 py-1 rounded-full bg-gray-50">
+                                                Pending
+                                            </span>
+                                        )}
+                                    </div>
+
+                                    {/* COLUMN 3: CONTACT (30%) - Right Aligned */}
+                                    <div className="flex-[0.3] text-right">
+                                        <span className={`block text-xs font-mono ${reg.isCheckedIn ? 'text-green-700 font-bold' : 'text-gray-400'}`}>
+                                            {maskPhone(reg.phoneNumber)}
+                                        </span>
+                                    </div>
                                 </div>
-                            ))}
-                        </div>
+                            ))
+                        }
+                      </div>
                     ) : (
                         <div className="p-10 text-center text-gray-400 flex flex-col items-center"><span className="text-4xl mb-2 opacity-30">📂</span><p className="text-sm">No registrations yet.</p></div>
                     )}
@@ -1296,41 +1425,174 @@ function App() {
       )}
 
       {/* ADMIN DASHBOARD */}
+      {/* ADMIN DASHBOARD (Team Manager + Gatekeeper) */}
       {showAdminDashboard && adminUser && (
           <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4 animate-fade-in">
-              <div className="bg-white w-full max-w-lg rounded-sm shadow-2xl relative flex flex-col max-h-[90vh]">
-                  <div className="bg-ministry-blue p-4 text-white flex justify-between items-center flex-shrink-0">
-                      <div><h3 className="font-bold text-lg">Team Manager</h3><p className="text-xs text-white/60">Logged in as {adminUser.username}</p></div>
-                      <button onClick={() => setShowAdminDashboard(false)} className="text-white/50 hover:text-white font-bold text-xl">✕</button>
+              <div className="bg-white w-full max-w-4xl rounded-sm shadow-2xl relative flex flex-col max-h-[90vh] overflow-hidden">
+                  
+                  {/* Header & Tabs */}
+                  <div className="bg-ministry-blue text-white flex flex-col flex-shrink-0">
+                      <div className="p-4 flex justify-between items-center border-b border-white/10">
+                          <div>
+                              <h3 className="font-bold text-lg">Admin Console</h3>
+                              <p className="text-xs text-white/60">Logged in as {adminUser.username}</p>
+                          </div>
+                          <button onClick={() => setShowAdminDashboard(false)} className="text-white/50 hover:text-white font-bold text-xl">✕</button>
+                      </div>
+                      
+                      {/* TABS */}
+                      <div className="flex">
+                          <button 
+                              onClick={() => setAdminFormData({...adminFormData, activeTab: 'gatekeeper'})}
+                              className={`flex-1 py-3 text-sm font-bold uppercase tracking-widest transition ${adminFormData.activeTab === 'gatekeeper' ? 'bg-white text-ministry-blue' : 'bg-ministry-blue text-white/50 hover:text-white hover:bg-white/10'}`}
+                          >
+                              Gatekeeper (Scanner)
+                          </button>
+                          <button 
+                              onClick={() => setAdminFormData({...adminFormData, activeTab: 'team'})}
+                              className={`flex-1 py-3 text-sm font-bold uppercase tracking-widest transition ${adminFormData.activeTab === 'team' ? 'bg-white text-ministry-blue' : 'bg-ministry-blue text-white/50 hover:text-white hover:bg-white/10'}`}
+                          >
+                              Team Manager
+                          </button>
+                      </div>
                   </div>
-                  <div className="p-6 overflow-y-auto custom-scrollbar bg-gray-50">
-                      <form onSubmit={handleAddMinister} className="space-y-5">
-                          <div className="bg-white p-4 rounded-sm border border-gray-200">
-                              <span className="block text-xs font-bold uppercase text-gray-400 mb-2">Step 1: Choose Category</span>
-                              <div className="flex gap-4">
-                                  <label className="flex items-center gap-2 cursor-pointer"><input type="radio" name="type" value="event" checked={adminFormData.targetType === 'event'} onChange={() => setAdminFormData({...adminFormData, targetType: 'event'})} className="accent-ministry-gold" /><span className="text-sm font-bold text-gray-700">Event</span></label>
-                                  <label className="flex items-center gap-2 cursor-pointer"><input type="radio" name="type" value="book" checked={adminFormData.targetType === 'book'} onChange={() => setAdminFormData({...adminFormData, targetType: 'book'})} className="accent-ministry-gold" /><span className="text-sm font-bold text-gray-700">Book Launch</span></label>
+                  
+                  <div className="p-6 overflow-y-auto custom-scrollbar bg-gray-50 flex-1">
+                      
+                      {/* === TAB 1: GATEKEEPER (Check-In) === */}
+                      {adminFormData.activeTab === 'gatekeeper' ? (
+                          <div className="flex flex-col items-center justify-center h-full max-w-lg mx-auto text-center">
+                              
+                              {/* Status Display */}
+                              <div className={`w-full p-8 rounded-lg mb-8 border-2 transition-all duration-300 ${
+                                  checkInStatus === 'success' ? 'bg-green-50 border-green-500' :
+                                  checkInStatus === 'error' ? 'bg-red-50 border-red-500' :
+                                  checkInStatus === 'warning' ? 'bg-orange-50 border-orange-500' :
+                                  'bg-white border-gray-200'
+                              }`}>
+                                  {checkInStatus === 'success' && <div className="text-6xl mb-2">✅</div>}
+                                  {checkInStatus === 'error' && <div className="text-6xl mb-2">⛔</div>}
+                                  {checkInStatus === 'warning' && <div className="text-6xl mb-2">⚠️</div>}
+                                  {!checkInStatus && <div className="text-6xl mb-2 opacity-20">📷</div>}
+
+                                  <h2 className={`text-2xl font-black uppercase tracking-widest ${
+                                      checkInStatus === 'success' ? 'text-green-600' :
+                                      checkInStatus === 'error' ? 'text-red-600' :
+                                      checkInStatus === 'warning' ? 'text-orange-600' :
+                                      'text-gray-400'
+                                  }`}>
+                                      {checkInMessage || 'Ready to Scan'}
+                                  </h2>
+
+                                  {/* Guest Details on Scan */}
+                                  {scannedGuest && (
+                                      <div className="mt-4 pt-4 border-t border-gray-200/50 animate-fade-in">
+                                          <p className="text-sm font-bold text-gray-800 text-xl">{scannedGuest.fullName}</p>
+                                          <p className="text-xs text-gray-500 uppercase tracking-widest">{scannedGuest.attendanceType} Attendee</p>
+                                          <p className="text-xs text-gray-400 mt-1">{scannedGuest.emailAddress}</p>
+                                      </div>
+                                  )}
                               </div>
+
+                              {/* Input Area */}
+                              {/* CAMERA SCANNER AREA (Updated for React 19) */}
+                              {cameraActive && (
+                                  <div className="mb-6 bg-black rounded-lg overflow-hidden relative h-64 border-2 border-ministry-gold">
+                                      <Scanner
+                                          onScan={(result) => {
+                                              // The library returns an array of results
+                                              if (result && result[0]) {
+                                                  const code = result[0].rawValue;
+                                                  
+                                                  // 1. Fill the input
+                                                  setCheckInCode(code);
+                                                  
+                                                  // 2. Close Camera
+                                                  setCameraActive(false);
+                                                  
+                                                  // 3. Optional: Play a "beep" sound here if you want
+                                                  // const audio = new Audio('/beep.mp3'); audio.play();
+                                              }
+                                          }}
+                                          onError={(error) => console.log(error?.message)}
+                                          // Styles to make it fit nicely
+                                          components={{
+                                              audio: false, // Turn off default beep if you want
+                                              onOff: false, // Hide the flash button if not needed
+                                          }}
+                                          styles={{
+                                              container: { height: '100%', width: '100%' },
+                                              video: { objectFit: 'cover' }
+                                          }}
+                                      />
+                                      
+                                      <button 
+                                          onClick={() => setCameraActive(false)}
+                                          className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-red-600 text-white px-4 py-2 rounded-full text-xs font-bold uppercase tracking-widest shadow-lg z-20"
+                                      >
+                                          Stop Camera
+                                      </button>
+                                  </div>
+                              )}
+
+                              {/* MANUAL INPUT AREA */}
+                              <form onSubmit={handleGateCheckIn} className="w-full relative">
+                                  <input 
+                                      autoFocus
+                                      type="text" 
+                                      placeholder="Scan QR or Enter Ticket ID..." 
+                                      className="w-full p-4 pl-12 text-lg border-2 border-ministry-blue rounded-sm focus:outline-none focus:border-ministry-gold shadow-lg"
+                                      value={checkInCode}
+                                      onChange={(e) => setCheckInCode(e.target.value)}
+                                  />
+                                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-2xl">🔎</span>
+                                  
+                                  {/* CAMERA TOGGLE BUTTON (Mobile Friendly) */}
+                                  <button 
+                                      type="button"
+                                      onClick={() => setCameraActive(true)}
+                                      className="absolute right-2 top-1/2 -translate-y-1/2 bg-gray-100 p-2 rounded-sm text-xl hover:bg-ministry-gold hover:text-white transition"
+                                      title="Open Camera"
+                                  >
+                                      📷
+                                  </button>
+                              </form>
+                              <p className="text-[10px] text-gray-400 mt-4 uppercase tracking-widest">
+                                  Click the box and use your QR Scanner Gun OR type code manually.
+                              </p>
                           </div>
-                          <div>
-                              <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Step 2: Select the Event/Book</label>
-                              <select className="w-full p-3 border border-gray-300 focus:border-ministry-gold outline-none bg-white text-sm" onChange={(e) => setAdminFormData({...adminFormData, targetId: e.target.value})} required>
-                                  <option value="">-- Select Item --</option>
-                                  {adminFormData.targetType === 'event' ? events.map(e => <option key={e.id} value={e.documentId || e.id}>{e.Title}</option>) : books.map(b => <option key={b.id} value={b.documentId || b.id}>{b.Title}</option>)}
-                              </select>
-                          </div>
-                          <div className="space-y-3">
-                              <span className="block text-xs font-bold uppercase text-gray-400">Step 3: Team Member Details</span>
-                              <input type="text" placeholder="Full Name (e.g. Sarah Jones)" className="w-full p-3 border border-gray-300 focus:border-ministry-gold outline-none text-sm rounded-sm" required value={adminFormData.ministerName} onChange={e => setAdminFormData({...adminFormData, ministerName: e.target.value})} />
-                              <input type="text" placeholder="Role (e.g. Volunteer, Organiser, Speaker)" className="w-full p-3 border border-gray-300 focus:border-ministry-gold outline-none text-sm rounded-sm" required value={adminFormData.ministerRole} onChange={e => setAdminFormData({...adminFormData, ministerRole: e.target.value})} />
-                              <textarea placeholder="Short Bio or Description (Optional)" className="w-full p-3 border border-gray-300 focus:border-ministry-gold outline-none text-sm rounded-sm" rows="3" value={adminFormData.ministerBio} onChange={e => setAdminFormData({...adminFormData, ministerBio: e.target.value})}></textarea>
-                          </div>
-                          <div>
-                              <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Step 4: Upload Photo</label>
-                              <input type="file" className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-sm file:border-0 file:text-xs file:font-semibold file:bg-ministry-blue file:text-white hover:file:bg-ministry-gold transition" accept="image/*" onChange={e => setAdminFormData({...adminFormData, ministerPhoto: e.target.files[0]})} />
-                          </div>
-                          <button className="w-full bg-green-600 text-white py-4 font-bold uppercase tracking-widest hover:bg-green-700 transition shadow-lg mt-4 text-sm">+ Add to Team</button>
-                      </form>
+                      ) : (
+                          /* === TAB 2: TEAM MANAGER (Existing Code) === */
+                          <form onSubmit={handleAddMinister} className="space-y-5">
+                              {/* ... (Paste your existing Team Manager Form Code here) ... */}
+                              {/* Just copy the content inside your previous <form> tag here */}
+                              <div className="bg-white p-4 rounded-sm border border-gray-200">
+                                  <span className="block text-xs font-bold uppercase text-gray-400 mb-2">Step 1: Choose Category</span>
+                                  <div className="flex gap-4">
+                                      <label className="flex items-center gap-2 cursor-pointer"><input type="radio" name="type" value="event" checked={adminFormData.targetType === 'event'} onChange={() => setAdminFormData({...adminFormData, targetType: 'event'})} className="accent-ministry-gold" /><span className="text-sm font-bold text-gray-700">Event</span></label>
+                                      <label className="flex items-center gap-2 cursor-pointer"><input type="radio" name="type" value="book" checked={adminFormData.targetType === 'book'} onChange={() => setAdminFormData({...adminFormData, targetType: 'book'})} className="accent-ministry-gold" /><span className="text-sm font-bold text-gray-700">Book Launch</span></label>
+                                  </div>
+                              </div>
+                              <div>
+                                  <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Step 2: Select the Event/Book</label>
+                                  <select className="w-full p-3 border border-gray-300 focus:border-ministry-gold outline-none bg-white text-sm" onChange={(e) => setAdminFormData({...adminFormData, targetId: e.target.value})} required>
+                                      <option value="">-- Select Item --</option>
+                                      {adminFormData.targetType === 'event' ? events.map(e => <option key={e.id} value={e.documentId || e.id}>{e.Title}</option>) : books.map(b => <option key={b.id} value={b.documentId || b.id}>{b.Title}</option>)}
+                                  </select>
+                              </div>
+                              <div className="space-y-3">
+                                  <span className="block text-xs font-bold uppercase text-gray-400">Step 3: Team Member Details</span>
+                                  <input type="text" placeholder="Full Name (e.g. Sarah Jones)" className="w-full p-3 border border-gray-300 focus:border-ministry-gold outline-none text-sm rounded-sm" required value={adminFormData.ministerName} onChange={e => setAdminFormData({...adminFormData, ministerName: e.target.value})} />
+                                  <input type="text" placeholder="Role (e.g. Volunteer, Organiser, Speaker)" className="w-full p-3 border border-gray-300 focus:border-ministry-gold outline-none text-sm rounded-sm" required value={adminFormData.ministerRole} onChange={e => setAdminFormData({...adminFormData, ministerRole: e.target.value})} />
+                                  <textarea placeholder="Short Bio or Description (Optional)" className="w-full p-3 border border-gray-300 focus:border-ministry-gold outline-none text-sm rounded-sm" rows="3" value={adminFormData.ministerBio} onChange={e => setAdminFormData({...adminFormData, ministerBio: e.target.value})}></textarea>
+                              </div>
+                              <div>
+                                  <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Step 4: Upload Photo</label>
+                                  <input type="file" className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-sm file:border-0 file:text-xs file:font-semibold file:bg-ministry-blue file:text-white hover:file:bg-ministry-gold transition" accept="image/*" onChange={e => setAdminFormData({...adminFormData, ministerPhoto: e.target.files[0]})} />
+                              </div>
+                              <button className="w-full bg-green-600 text-white py-4 font-bold uppercase tracking-widest hover:bg-green-700 transition shadow-lg mt-4 text-sm">+ Add to Team</button>
+                          </form>
+                      )}
                   </div>
               </div>
           </div>
