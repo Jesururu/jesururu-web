@@ -214,7 +214,20 @@ const EventTicket = ({ event, isPast, onOpenEvent, onOpenGuestList, onOpenTeam, 
     </div>
   );
 };
-
+// Add this right before your App() function or inside the return()
+    const GlobalStyles = () => (
+      <style>{`
+        @keyframes shine-move {
+          0% { background-position: 0% 50%; }
+          50% { background-position: 100% 50%; }
+          100% { background-position: 0% 50%; }
+        }
+        .animate-liquid-gold {
+          background-size: 200% auto;
+          animation: shine-move 3s linear infinite;
+        }
+      `}</style>
+    );
 // =========================================
 // MAIN APP COMPONENT
 // =========================================
@@ -370,28 +383,73 @@ function App() {
   const handleAddMinister = async (e) => {
       e.preventDefault();
       if (!adminUser) return alert("You must be logged in.");
-      try {
-          let photoId = null;
-          if (adminFormData.ministerPhoto) {
+      
+      // 1. UPLOAD PHOTO FIRST (If exists)
+      let photoId = null;
+      
+      if (adminFormData.ministerPhoto) {
+          try {
+              console.log("Starting upload..."); // Debug log
+              
               const uploadData = new FormData();
+              // Strapi requires the field name to be 'files'
               uploadData.append('files', adminFormData.ministerPhoto);
-              const uploadRes = await axios.post(`${STRAPI_URL}/api/upload`, uploadData, { headers: { Authorization: `Bearer ${adminUser.token}` } });
-              photoId = uploadRes.data[0].id;
+
+              const uploadRes = await axios.post(`${STRAPI_URL}/api/upload`, uploadData, { 
+                  headers: { 
+                      'Authorization': `Bearer ${adminUser.token}`,
+                      // Let axios set the Content-Type automatically for FormData
+                  } 
+              });
+              
+              console.log("Upload Success:", uploadRes.data); // Debug log
+              photoId = uploadRes.data[0].id; // Get the ID of the uploaded image
+
+          } catch (uploadError) {
+              console.error("UPLOAD FAILED DETAILS:", uploadError.response?.data || uploadError.message);
+              alert(`Image Upload Failed: ${uploadError.response?.data?.error?.message || "Check console for details"}`);
+              return; // Stop here if image fails
           }
+      }
+
+      // 2. ADD TEAM MEMBER DATA
+      try {
           const collection = adminFormData.targetType === 'book' ? 'books' : 'events';
           const fieldName = adminFormData.targetType === 'book' ? 'TheTeam' : 'Team'; 
+          
+          // Get current data to append to it (instead of overwriting)
           const getRes = await axios.get(`${STRAPI_URL}/api/${collection}/${adminFormData.targetId}?populate[${fieldName}][populate]=*`);
           const currentData = getRes.data.data.attributes || getRes.data.data;
           const currentTeam = currentData[fieldName] || [];
-          const cleanTeam = currentTeam.map(member => ({ Name: member.Name, Role: member.Role, Bio: member.Bio, Photo: member.Photo ? member.Photo.id : null }));
-          const newMember = { Name: adminFormData.ministerName, Role: adminFormData.ministerRole, Bio: adminFormData.ministerBio, Photo: photoId };
-          await axios.put(`${STRAPI_URL}/api/${collection}/${adminFormData.targetId}`, { data: { [fieldName]: [...cleanTeam, newMember] } }, { headers: { Authorization: `Bearer ${adminUser.token}` } });
+          
+          // Clean existing team data (Strapi needs clean IDs for relations)
+          const cleanTeam = currentTeam.map(member => ({ 
+              Name: member.Name, 
+              Role: member.Role, 
+              Bio: member.Bio, 
+              Photo: member.Photo ? member.Photo.id : null 
+          }));
+          
+          const newMember = { 
+              Name: adminFormData.ministerName, 
+              Role: adminFormData.ministerRole, 
+              Bio: adminFormData.ministerBio, 
+              Photo: photoId // Attach the ID we got from Step 1
+          };
+
+          await axios.put(`${STRAPI_URL}/api/${collection}/${adminFormData.targetId}`, { 
+              data: { [fieldName]: [...cleanTeam, newMember] } 
+          }, { 
+              headers: { Authorization: `Bearer ${adminUser.token}` } 
+          });
+
           alert("Minister Added Successfully!");
           setAdminFormData({ ...adminFormData, ministerName: '', ministerRole: '', ministerBio: '', ministerPhoto: null });
           window.location.reload(); 
+
       } catch (error) {
-          console.error(error);
-          alert("Failed to add minister.");
+          console.error("DATA SAVE FAILED:", error.response?.data || error.message);
+          alert("Failed to save team member details.");
       }
   };
 
@@ -404,34 +462,98 @@ function App() {
     setIsRegistering(eventItem.isBook); 
     setEventModalOpen(true);
   };
+  // --- ADMIN INPUT HANDLER (Title Case Enforcer) ---
+  const handleAdminInput = (e) => {
+      const { name, value } = e.target;
 
+      // Force Title Case for Name & Role
+      if (name === 'ministerName' || name === 'ministerRole') {
+          const formatted = value
+              .toLowerCase()
+              .split(' ')
+              .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+              .join(' ');
+          
+          setAdminFormData(prev => ({ ...prev, [name]: formatted }));
+      } 
+      // Handle standard fields (Bio, Selects, etc)
+      else {
+          setAdminFormData(prev => ({ ...prev, [name]: value }));
+      }
+  };
   const handleRegistrationInput = (e) => {
       const { name, value } = e.target;
-      setRegistrationData(prev => ({ ...prev, [name]: value }));
+
+      // 1. If typing in the "Name" field, force Title Case live
+      if (name === 'name') {
+          const formattedValue = value
+              .toLowerCase() // Force everything to lowercase first (fixes Caps Lock)
+              .split(' ')    // Split into words
+              .map(word => word.charAt(0).toUpperCase() + word.slice(1)) // Cap first letter
+              .join(' ');    // Join back together
+
+          setRegistrationData(prev => ({ ...prev, [name]: formattedValue }));
+      } 
+      // 2. If typing in "Email", force Lowercase live
+      else if (name === 'email') {
+          setRegistrationData(prev => ({ ...prev, [name]: value.toLowerCase() }));
+      }
+      // 3. Other fields (Phone, etc) behave normally
+      else {
+          setRegistrationData(prev => ({ ...prev, [name]: value }));
+      }
   };
 
   const handleEventRegistrationSubmit = async (e) => {
     e.preventDefault();
     if(!selectedEvent) return;
     setIsSubmitting(true);
-    const ticketCode = generateTicketCode();
-    const payload = {
-        fullName: registrationData.name, emailAddress: registrationData.email, phoneNumber: registrationData.phone,
-        attendanceType: registrationData.attendanceType, eventTitle: selectedEvent.Title, ticketCode: ticketCode,
+
+    // --- 1. HEAVY DUTY FORMATTER ---
+    // Forces "JOHN DOE" -> "john doe" -> "John Doe"
+    const toTitleCase = (str) => {
+        if (!str) return "";
+        return str
+            .toLowerCase() // Force strictly lowercase first
+            .split(' ')    // Break into words
+            .map(word => word.charAt(0).toUpperCase() + word.slice(1)) // Cap first letter
+            .join(' ');    // Join back together
     };
+
+    // Apply formatting immediately
+    const formattedName = toTitleCase(registrationData.name);
+    const ticketCode = generateTicketCode();
+    
+    const payload = {
+        fullName: formattedName, // <--- We send the clean name
+        emailAddress: registrationData.email.toLowerCase().trim(), // Clean email too
+        phoneNumber: registrationData.phone,
+        attendanceType: registrationData.attendanceType,
+        eventTitle: selectedEvent.Title,
+        ticketCode: ticketCode,
+    };
+
     if (!selectedEvent.isBook) payload.event = selectedEvent.documentId || selectedEvent.id;
 
     try {
       await axios.post(`${STRAPI_URL}/api/registrations`, { data: payload });
       setIsSubmitting(false);
+      
       setSuccessData({
-        name: registrationData.name, ticket: ticketCode, whatsAppLink: selectedEvent.WhatsAppLink || (selectedEvent.attributes && selectedEvent.attributes.WhatsAppLink),
-        date: ticketSnapshot.date || "TBA", venue: ticketSnapshot.venue || "TBA"
+        name: formattedName, // <--- Show clean name on Ticket
+        ticket: ticketCode,
+        whatsAppLink: selectedEvent.WhatsAppLink || (selectedEvent.attributes && selectedEvent.attributes.WhatsAppLink),
+        date: ticketSnapshot.date || "TBA",
+        venue: ticketSnapshot.venue || "TBA"
       });
-      setAllRegistrations(prev => [...prev, { ...payload, id: Date.now() }]);
+      
+      // Update local list with the clean name
+      setAllRegistrations(prev => [...prev, { ...payload, fullName: formattedName, id: Date.now() }]);
       setRegistrationData({ name: '', email: '', phone: '', attendanceType: 'Physical' });
     } catch (error) {
-      setIsSubmitting(false); alert("Registration failed.");
+      setIsSubmitting(false); 
+      console.error(error);
+      alert("Registration failed. Please check connection.");
     }
   };
 
@@ -491,7 +613,13 @@ function App() {
         const flattened = regRes.data.data.map(item => ({ id: item.id, ...(item.attributes || item) }));
         setAllRegistrations(flattened);
       } catch (error) { console.error("Fetch Error:", error); } 
-      finally { setLoading(false); }
+      finally {
+        // ▼▼▼ CHANGE THIS PART ▼▼▼
+          // Delay closing the loader by 4 seconds (4000ms) to see the animation
+          setTimeout(() => {
+            setLoading(false);
+          }, 1000);
+      }
     };
     fetchData();
   }, []);
@@ -577,82 +705,247 @@ function App() {
 
   const { upcoming: upcomingEvents, past: pastEvents } = getEventsData();
 
-  if (loading) return <div className="h-screen flex justify-center items-center bg-ministry-blue text-ministry-gold font-bold">LOADING...</div>;
+  // =========================================
+  // VIEW: PREMIUM LOADER (With Cross)
+  // =========================================
+  if (loading) {
+    return (
+      <div className="fixed inset-0 z-[999] flex flex-col items-center justify-center bg-[#0B1120] text-white overflow-hidden">
+        {/* 1. Background Ambience */}
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-ministry-gold/5 rounded-full blur-[100px] animate-pulse"></div>
+
+        {/* 2. Main Content Container */}
+        <div className="relative z-10 flex flex-col items-center">
+            
+            {/* 3. BRAND HEADER (Cross + Name) */}
+            <div className="flex items-center gap-3 md:gap-6 mb-6 animate-fade-in-up">
+                
+                {/* THE CROSS SVG (Responsive Size: h-8 to h-16) */}
+                <svg className="h-8 w-8 md:h-14 md:w-14 drop-shadow-2xl" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M12 2V22M5 9H19" stroke="url(#gold-loader-gradient)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+                    <defs>
+                        <linearGradient id="gold-loader-gradient" x1="12" y1="2" x2="12" y2="22" gradientUnits="userSpaceOnUse">
+                            <stop offset="0%" stopColor="#BF953F" />
+                            <stop offset="50%" stopColor="#FCF6BA" />
+                            <stop offset="100%" stopColor="#B38728" />
+                        </linearGradient>
+                    </defs>
+                </svg>
+
+                {/* THE NAME */}
+                <h1 className="text-4xl md:text-6xl font-serif font-bold tracking-wider flex items-baseline">
+                    <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#BF953F] via-[#FCF6BA] to-[#B38728] drop-shadow-sm">
+                        JesururuJude
+                    </span>
+                    <span className="text-gray-600 font-sans text-xl md:text-3xl font-light ml-1">
+                        .com
+                    </span>
+                </h1>
+            </div>
+
+            {/* 4. The Mandate (Subtext) */}
+            <p className="text-xs md:text-sm text-gray-500 uppercase tracking-[0.4em] mb-12 animate-fade-in-up delay-100">
+              Faith & Excellence
+            </p>
+
+            {/* 5. Elegant Loading Bar */}
+            <div className="w-32 md:w-48 h-[2px] bg-gray-800 rounded-full overflow-hidden relative">
+              <div className="absolute top-0 left-0 h-full w-1/2 bg-gradient-to-r from-transparent via-ministry-gold to-transparent animate-shimmer-slide"></div>
+            </div>
+        </div>
+
+        {/* 6. Animations */}
+        <style>{`
+          @keyframes shimmer-slide {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(200%); }
+          }
+          .animate-shimmer-slide {
+            animation: shimmer-slide 1.5s infinite linear;
+          }
+          @keyframes fade-in-up {
+            0% { opacity: 0; transform: translateY(15px); }
+            100% { opacity: 1; transform: translateY(0); }
+          }
+          .animate-fade-in-up {
+            animation: fade-in-up 1s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+          }
+          .delay-100 { animation-delay: 0.3s; opacity: 0; animation-fill-mode: forwards; }
+        `}</style>
+      </div>
+    );
+  }
 
   // =========================================
-  // VIEW: ADMIN DASHBOARD (GATEKEEPER)
+  // VIEW: ADMIN DASHBOARD (Mobile Optimized)
   // =========================================
   if (showAdminDashboard && adminUser) {
       return (
-          <div className="min-h-screen bg-gray-100 font-sans">
-              <div className="bg-ministry-blue text-white p-4 flex justify-between items-center shadow-lg">
-                  <h2 className="font-bold text-xl">Admin Dashboard</h2>
-                  <div className="flex gap-4">
-                      <button onClick={() => setAdminFormData({...adminFormData, activeTab: 'gatekeeper'})} className={`px-4 py-2 rounded text-xs font-bold uppercase ${adminFormData.activeTab === 'gatekeeper' ? 'bg-ministry-gold text-ministry-blue' : 'bg-white/10'}`}>Gatekeeper</button>
-                      <button onClick={() => setAdminFormData({...adminFormData, activeTab: 'team'})} className={`px-4 py-2 rounded text-xs font-bold uppercase ${adminFormData.activeTab === 'team' ? 'bg-ministry-gold text-ministry-blue' : 'bg-white/10'}`}>Team</button>
-                      <button onClick={() => { setAdminUser(null); setShowAdminDashboard(false); }} className="bg-red-600 px-4 py-2 rounded text-xs font-bold uppercase">Logout</button>
-                  </div>
-              </div>
-
-              <div className="max-w-4xl mx-auto p-6">
-                  {/* TAB: GATEKEEPER */}
-                  {adminFormData.activeTab === 'gatekeeper' && (
-                      <div className="bg-white p-6 rounded shadow-lg max-w-lg mx-auto text-center">
-                          <h3 className="text-2xl font-bold mb-6 text-gray-700">Ticket Scanner</h3>
-                          
-                          {/* Status Display */}
-                          <div className={`w-full p-8 rounded-lg mb-8 border-2 transition-all duration-300 ${checkInStatus === 'success' ? 'bg-green-50 border-green-500' : checkInStatus === 'error' ? 'bg-red-50 border-red-500' : checkInStatus === 'warning' ? 'bg-orange-50 border-orange-500' : 'bg-white border-gray-200'}`}>
-                                <h2 className={`text-2xl font-black uppercase tracking-widest ${checkInStatus === 'success' ? 'text-green-600' : checkInStatus === 'error' ? 'text-red-600' : checkInStatus === 'warning' ? 'text-orange-600' : 'text-gray-400'}`}>{checkInMessage || 'Ready to Scan'}</h2>
-                                {scannedGuest && (
-                                    <div className="mt-4 pt-4 border-t border-gray-200/50">
-                                        <p className="text-xl font-bold text-gray-800">{scannedGuest.fullName}</p>
-                                        <p className="text-xs text-gray-500 uppercase tracking-widest">{scannedGuest.attendanceType} Attendee</p>
-                                    </div>
-                                )}
+          <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/95 backdrop-blur-sm p-2 md:p-4 animate-fade-in">
+              {/* Main Container: 95% width on mobile, constrained height */}
+              <div className="bg-white w-full max-w-4xl rounded-sm shadow-2xl relative flex flex-col max-h-[95vh] md:max-h-[90vh] overflow-hidden">
+                  
+                  {/* HEADER (Stack on Mobile, Row on Desktop) */}
+                  <div className="bg-ministry-blue text-white p-4 flex flex-col md:flex-row justify-between items-center gap-4 flex-shrink-0 z-20 shadow-md">
+                      <div className="text-center md:text-left w-full md:w-auto flex justify-between items-center">
+                          <div>
+                              <h3 className="font-bold text-lg leading-none">Admin Console</h3>
+                              <p className="text-[10px] text-white/60 uppercase tracking-widest mt-1">Logged in as {adminUser.username}</p>
                           </div>
-
-                          {/* Scanner UI */}
-                          {cameraActive && (
-                            <div className="mb-6 bg-black rounded-lg overflow-hidden relative h-64 border-2 border-ministry-gold">
-                                <Scanner
-                                    onScan={(result) => { if (result && result.length > 0) handleScan(result[0].rawValue); }}
-                                    components={{ audio: false, onOff: false }}
-                                    styles={{ container: { height: '100%' }, video: { objectFit: 'cover' } }}
-                                />
-                                <button onClick={() => setCameraActive(false)} className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-red-600 text-white px-4 py-2 rounded-full text-xs font-bold uppercase tracking-widest shadow-lg z-20">Stop Camera</button>
-                            </div>
-                          )}
-
-                          {/* Manual Input */}
-                          <form onSubmit={handleManualSubmit} className="relative">
-                              <input autoFocus type="text" placeholder="Scan QR or Enter Ticket ID..." className="w-full p-4 pl-12 text-lg border-2 border-ministry-blue rounded-sm focus:outline-none focus:border-ministry-gold shadow-lg" value={checkInCode} onChange={(e) => setCheckInCode(e.target.value)} />
-                              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-2xl">🔎</span>
-                              <button type="button" onClick={() => setCameraActive(true)} className="absolute right-2 top-1/2 -translate-y-1/2 bg-gray-100 p-2 rounded-sm text-xl hover:bg-ministry-gold hover:text-white transition" title="Open Camera">📷</button>
-                          </form>
+                          {/* Close Button (Mobile Only - visible for quick exit) */}
+                          <button onClick={() => setShowAdminDashboard(false)} className="md:hidden text-white/50 hover:text-white text-2xl font-bold">✕</button>
                       </div>
-                  )}
 
-                  {/* TAB: TEAM MANAGER */}
-                  {adminFormData.activeTab === 'team' && (
-                      <div className="bg-white p-6 rounded shadow-lg">
-                          <h3 className="text-xl font-bold mb-4">Add Team Member</h3>
-                          <form onSubmit={handleAddMinister} className="space-y-4">
-                              <div className="flex gap-4">
-                                  <label className="flex items-center gap-2"><input type="radio" name="type" value="event" checked={adminFormData.targetType === 'event'} onChange={() => setAdminFormData({...adminFormData, targetType: 'event'})} /> Event</label>
-                                  <label className="flex items-center gap-2"><input type="radio" name="type" value="book" checked={adminFormData.targetType === 'book'} onChange={() => setAdminFormData({...adminFormData, targetType: 'book'})} /> Book</label>
+                      {/* Controls Row */}
+                      <div className="flex w-full md:w-auto gap-2">
+                          <button onClick={() => setAdminFormData({...adminFormData, activeTab: 'gatekeeper'})} className={`flex-1 md:flex-none px-3 py-2 rounded text-[10px] md:text-xs font-bold uppercase tracking-widest border border-white/20 transition ${adminFormData.activeTab === 'gatekeeper' ? 'bg-ministry-gold text-ministry-blue border-ministry-gold' : 'hover:bg-white/10'}`}>Scanner</button>
+                          <button onClick={() => setAdminFormData({...adminFormData, activeTab: 'team'})} className={`flex-1 md:flex-none px-3 py-2 rounded text-[10px] md:text-xs font-bold uppercase tracking-widest border border-white/20 transition ${adminFormData.activeTab === 'team' ? 'bg-ministry-gold text-ministry-blue border-ministry-gold' : 'hover:bg-white/10'}`}>Team</button>
+                          <button onClick={() => { setAdminUser(null); setShowAdminDashboard(false); }} className="bg-red-600 px-3 py-2 rounded text-[10px] md:text-xs font-bold uppercase tracking-widest hover:bg-red-700">Logout</button>
+                      </div>
+                      
+                      {/* Close Button (Desktop Only) */}
+                      <button onClick={() => setShowAdminDashboard(false)} className="hidden md:block text-white/50 hover:text-white text-2xl font-bold">✕</button>
+                  </div>
+
+                  {/* SCROLLABLE CONTENT AREA */}
+                  <div className="p-4 md:p-8 overflow-y-auto custom-scrollbar bg-gray-50 flex-1">
+                      
+                      {/* === TAB 1: GATEKEEPER (Scanner) === */}
+                      {adminFormData.activeTab === 'gatekeeper' && (
+                          <div className="flex flex-col items-center max-w-lg mx-auto text-center h-full">
+                              <h3 className="text-xl font-bold mb-4 text-gray-700 uppercase tracking-widest">Ticket Gate</h3>
+                              
+                              {/* 1. Status Display (Compact on Mobile) */}
+                              <div className={`w-full p-4 md:p-8 rounded-lg mb-6 border-2 shadow-sm transition-all duration-300 ${checkInStatus === 'success' ? 'bg-green-50 border-green-500' : checkInStatus === 'error' ? 'bg-red-50 border-red-500' : checkInStatus === 'warning' ? 'bg-orange-50 border-orange-500' : 'bg-white border-gray-200'}`}>
+                                    <div className="flex items-center justify-center gap-3 md:block">
+                                        <div className={`text-4xl md:text-6xl md:mb-2 ${!checkInStatus && 'opacity-20'}`}>
+                                            {checkInStatus === 'success' ? '✅' : checkInStatus === 'error' ? '⛔' : checkInStatus === 'warning' ? '⚠️' : '📷'}
+                                        </div>
+                                        <h2 className={`text-lg md:text-2xl font-black uppercase tracking-widest ${checkInStatus === 'success' ? 'text-green-600' : checkInStatus === 'error' ? 'text-red-600' : checkInStatus === 'warning' ? 'text-orange-600' : 'text-gray-400'}`}>
+                                            {checkInMessage || 'Ready'}
+                                        </h2>
+                                    </div>
+                                    {scannedGuest && (
+                                        <div className="mt-3 pt-3 border-t border-gray-200/50 text-left md:text-center">
+                                            <p className="text-lg font-bold text-gray-800 leading-tight">{scannedGuest.fullName}</p>
+                                            <p className="text-[10px] text-gray-500 uppercase tracking-widest">{scannedGuest.attendanceType} Attendee</p>
+                                        </div>
+                                    )}
                               </div>
-                              <select className="w-full p-2 border" onChange={(e) => setAdminFormData({...adminFormData, targetId: e.target.value})} required>
-                                  <option value="">-- Select Item --</option>
-                                  {adminFormData.targetType === 'event' ? events.map(e => <option key={e.id} value={e.documentId || e.id}>{e.Title}</option>) : books.map(b => <option key={b.id} value={b.documentId || b.id}>{b.Title}</option>)}
-                              </select>
-                              <input type="text" placeholder="Name" className="w-full p-2 border" required value={adminFormData.ministerName} onChange={e => setAdminFormData({...adminFormData, ministerName: e.target.value})} />
-                              <input type="text" placeholder="Role" className="w-full p-2 border" required value={adminFormData.ministerRole} onChange={e => setAdminFormData({...adminFormData, ministerRole: e.target.value})} />
-                              <textarea placeholder="Bio" className="w-full p-2 border" rows="2" value={adminFormData.ministerBio} onChange={e => setAdminFormData({...adminFormData, ministerBio: e.target.value})}></textarea>
-                              <input type="file" className="w-full" onChange={e => setAdminFormData({...adminFormData, ministerPhoto: e.target.files[0]})} />
-                              <button className="w-full bg-green-600 text-white py-3 font-bold uppercase">Add Member</button>
-                          </form>
-                      </div>
-                  )}
+
+                              {/* 2. Camera Scanner UI */}
+                              {cameraActive && (
+                                <div className="w-full mb-6 bg-black rounded-lg overflow-hidden relative h-56 md:h-64 border-4 border-ministry-gold shadow-2xl">
+                                    <Scanner
+                                        onScan={(result) => { if (result && result.length > 0) handleScan(result[0].rawValue); }}
+                                        components={{ audio: false, onOff: false }}
+                                        styles={{ container: { height: '100%' }, video: { objectFit: 'cover' } }}
+                                    />
+                                    <button onClick={() => setCameraActive(false)} className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-red-600 text-white px-4 py-2 rounded-full text-[10px] font-bold uppercase tracking-widest shadow-lg z-20 whitespace-nowrap">Stop Camera</button>
+                                </div>
+                              )}
+
+                              {/* 3. Manual Input Form */}
+                              {!cameraActive && (
+                                <form onSubmit={handleManualSubmit} className="relative w-full">
+                                    <input 
+                                        autoFocus 
+                                        type="text" 
+                                        placeholder="Enter Ticket ID manually..." 
+                                        className="w-full p-4 pl-4 pr-14 text-base border-2 border-ministry-blue rounded-sm focus:outline-none focus:border-ministry-gold shadow-sm bg-white" 
+                                        value={checkInCode} 
+                                        onChange={(e) => setCheckInCode(e.target.value)} 
+                                    />
+                                    {/* Camera Button floating inside input */}
+                                    <button 
+                                        type="button" 
+                                        onClick={() => setCameraActive(true)} 
+                                        className="absolute right-2 top-1/2 -translate-y-1/2 bg-gray-100 p-2 rounded-sm text-xl hover:bg-ministry-gold hover:text-white transition border border-gray-200" 
+                                        title="Open Camera"
+                                    >
+                                        📷
+                                    </button>
+                                </form>
+                              )}
+                              
+                              <p className="text-[10px] text-gray-400 mt-4 uppercase tracking-widest max-w-xs mx-auto">
+                                  Use the Camera button or type code to verify entry.
+                              </p>
+                          </div>
+                      )}
+
+                      {/* === TAB 2: TEAM MANAGER === */}
+                      {adminFormData.activeTab === 'team' && (
+                          <div className="bg-white p-4 md:p-8 rounded shadow-lg">
+                              <h3 className="text-lg md:text-xl font-bold mb-6 text-gray-700 uppercase tracking-widest border-b pb-2">Add Team Member</h3>
+                              <form onSubmit={handleAddMinister} className="space-y-4">
+                                  
+                                  {/* Step 1: Radio Buttons (Stack on Mobile) */}
+                                  <div className="bg-gray-50 p-3 rounded border border-gray-200">
+                                      <span className="block text-[10px] font-bold uppercase text-gray-400 mb-2">Category</span>
+                                      <div className="flex flex-col sm:flex-row gap-3">
+                                          <label className="flex items-center gap-2 p-2 bg-white border rounded cursor-pointer hover:border-ministry-gold transition">
+                                              <input type="radio" name="type" value="event" checked={adminFormData.targetType === 'event'} onChange={() => setAdminFormData({...adminFormData, targetType: 'event'})} className="accent-ministry-gold" /> 
+                                              <span className="text-sm font-bold">Event</span>
+                                          </label>
+                                          <label className="flex items-center gap-2 p-2 bg-white border rounded cursor-pointer hover:border-ministry-gold transition">
+                                              <input type="radio" name="type" value="book" checked={adminFormData.targetType === 'book'} onChange={() => setAdminFormData({...adminFormData, targetType: 'book'})} className="accent-ministry-gold" /> 
+                                              <span className="text-sm font-bold">Book Launch</span>
+                                          </label>
+                                      </div>
+                                  </div>
+
+                                  {/* Step 2: Dropdown */}
+                                  <div>
+                                      <label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Select Item</label>
+                                      <select className="w-full p-3 border border-gray-300 focus:border-ministry-gold outline-none bg-white text-sm rounded-sm" onChange={(e) => setAdminFormData({...adminFormData, targetId: e.target.value})} required>
+                                          <option value="">-- Choose --</option>
+                                          {adminFormData.targetType === 'event' ? events.map(e => <option key={e.id} value={e.documentId || e.id}>{e.Title}</option>) : books.map(b => <option key={b.id} value={b.documentId || b.id}>{b.Title}</option>)}
+                                      </select>
+                                  </div>
+
+                                  {/* Step 3: Text Inputs */}
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <input 
+                                        type="text" 
+                                        name="ministerName" // <--- Critical for handler
+                                        placeholder="Full Name" 
+                                        className="w-full p-3 border border-gray-300 focus:border-ministry-gold outline-none text-sm rounded-sm" 
+                                        required 
+                                        value={adminFormData.ministerName} 
+                                        onChange={handleAdminInput} // <--- Updated Handler
+                                    />
+                                    <input 
+                                        type="text" 
+                                        name="ministerRole" // <--- Critical for handler
+                                        placeholder="Role (e.g. Speaker)" 
+                                        className="w-full p-3 border border-gray-300 focus:border-ministry-gold outline-none text-sm rounded-sm" 
+                                        required 
+                                        value={adminFormData.ministerRole} 
+                                        onChange={handleAdminInput} // <--- Updated Handler
+                                    />
+                                  </div>                                  
+                                  {/* Bio needs a name attribute too, but handles normal text */}
+                                  <textarea 
+                                      name="ministerBio" 
+                                      placeholder="Short Bio (Optional)" 
+                                      className="w-full p-3 border border-gray-300 focus:border-ministry-gold outline-none text-sm rounded-sm" 
+                                      rows="3" 
+                                      value={adminFormData.ministerBio} 
+                                      onChange={handleAdminInput} // <--- Updated Handler
+                                  ></textarea>                                  
+                                  <div>
+                                      <label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Photo</label>
+                                      <input type="file" className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-sm file:border-0 file:text-xs file:font-bold file:bg-ministry-blue file:text-white hover:file:bg-ministry-gold transition" onChange={e => setAdminFormData({...adminFormData, ministerPhoto: e.target.files[0]})} />
+                                  </div>
+
+                                  <button className="w-full bg-green-600 text-white py-4 font-bold uppercase tracking-widest hover:bg-green-700 transition shadow-lg mt-2 text-xs md:text-sm rounded-sm">
+                                      + Add Team Member
+                                  </button>
+                              </form>
+                          </div>
+                      )}
+                  </div>
               </div>
           </div>
       );
@@ -663,14 +956,56 @@ function App() {
   // =========================================
   return (
     <div className="w-full overflow-x-hidden font-sans text-gray-800">
+      <GlobalStyles />
       {/* NAVBAR */}
       <nav className="fixed w-full z-50 bg-white/95 backdrop-blur-md shadow-sm border-b border-gray-100">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-20">
-            <div className="flex-shrink-0 cursor-pointer" onClick={() => scrollToSection('home')}>
-              <span className="font-serif text-2xl font-bold text-ministry-blue tracking-wider">
-                JUDE <span className="text-ministry-gold">JESURURU</span>
-              </span>
+            {/* Paste <GlobalStyles /> inside your main return, right at the top */}
+            <GlobalStyles /> 
+
+            <div className="flex-shrink-0 cursor-pointer group" onClick={() => scrollToSection('home')}>
+              <div className="relative flex flex-col items-start justify-center">
+                
+                {/* 1. TOP LINE: THE BRAND LOGO (Responsive Container) */}
+                {/* Mobile: tighter padding (px-2 py-1.5) | Desktop: looser padding (md:px-3 md:py-2) */}
+                <div className="flex items-center gap-1.5 md:gap-2 bg-[#0B1120] px-2 py-1.5 md:px-3 md:py-2 rounded-sm shadow-[0_4px_10px_rgba(0,0,0,0.2)] border border-[#BF953F]/30 hover:border-[#BF953F] transition-all duration-500 group-hover:-translate-y-0.5">
+                  
+                  {/* === THE CROSS (Responsive Size) === */}
+                  {/* Mobile: h-4 w-4 | Desktop: h-5 w-5 */}
+                  <svg className="h-4 w-4 md:h-5 md:w-5 drop-shadow-sm flex-shrink-0" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M12 2V22M5 9H19" stroke="url(#gold-cross-gradient)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+                    <defs>
+                      <linearGradient id="gold-cross-gradient" x1="12" y1="2" x2="12" y2="22" gradientUnits="userSpaceOnUse">
+                        <stop offset="0%" stopColor="#BF953F" />
+                        <stop offset="50%" stopColor="#FCF6BA" />
+                        <stop offset="100%" stopColor="#B38728" />
+                      </linearGradient>
+                    </defs>
+                  </svg>
+
+                  {/* THE NAME (Responsive Text Size) */}
+                  {/* Mobile: text-lg | Desktop: text-2xl */}
+                  <span className="font-serif text-lg md:text-2xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-[#BF953F] via-[#FCF6BA] to-[#BF953F] animate-liquid-gold whitespace-nowrap">
+                    JesururuJude
+                  </span>
+
+                  {/* THE EXTENSION (Responsive Tag) */}
+                  {/* Scales height and font size automatically */}
+                  <span className="flex items-center justify-center h-4 md:h-5 px-1 bg-gradient-to-b from-[#BF953F] to-[#8C6D2E] text-[#0B1120] text-[8px] md:text-[9px] font-bold font-sans tracking-widest rounded-[2px] shadow-sm ml-0.5 md:ml-1">
+                    .COM
+                  </span>
+                </div>
+
+                {/* 2. BOTTOM LINE: THE PROMISE (Desktop Only) */}
+                {/* Hidden on mobile (hidden) to save space, Visible on desktop (md:block) */}
+                <div className="absolute -bottom-4 left-0 w-full text-center opacity-0 group-hover:opacity-100 transition-all duration-500 transform translate-y-2 group-hover:translate-y-0 hidden md:block">
+                  <span className="text-[8px] uppercase tracking-[0.3em] font-bold text-ministry-blue">
+                    Faith & Excellence
+                  </span>
+                </div>
+
+              </div>
             </div>
             <div className="hidden md:flex space-x-8 items-center">
               {['Home', 'About', 'Books', 'Films', 'Worship'].map((item) => (
@@ -840,7 +1175,204 @@ function App() {
           </div>
         </div>
       </section>
+      {/* ========================================= */}
+      {/* RED CARPET BANNER (XS-Optimized + Cross)  */}
+      {/* ========================================= */}
+      {(() => {
+        // 1. Data Logic
+        const realEvent = upcomingEvents[0];
+        const demoEvent = {
+            Title: "Eternal Perspective to Earthly Realities",
+            Category: "Live Ministry",
+            EventDateTime: "Oct 12, 2:00 PM WAT",
+            Venue: "Eko Hotel Convention Centre, VI",
+            Poster: null
+        };
+        const targetEvent = realEvent || demoEvent;
 
+        // 2. PDF Download Function (Fixed: Text Visibility & Image Sizing)
+        // PDF Download Function (Fixed: Text Color, Image Size, and Icon Alignment)
+        const handleDownloadPDF = async () => {
+            // Dynamically import libraries
+            const html2canvas = (await import('html2canvas')).default;
+            const jsPDF = (await import('jspdf')).default;
+
+            const element = document.getElementById('banner-to-print');
+            if(!element) return;
+
+            document.body.style.cursor = 'wait';
+
+            // Capture dimensions to freeze layout
+            const posterImg = element.querySelector('img');
+            let posterWidth, posterHeight;
+            if (posterImg) {
+                posterWidth = posterImg.offsetWidth;
+                posterHeight = posterImg.offsetHeight;
+            }
+
+            try {
+                const canvas = await html2canvas(element, {
+                    scale: 3, 
+                    useCORS: true, 
+                    backgroundColor: '#0B1120', 
+                    
+                    // === MODIFICATIONS FOR THE PDF SNAPSHOT ===
+                    onclone: (clonedDoc) => {
+                        const clonedElement = clonedDoc.getElementById('banner-to-print');
+                        
+                        // A. FIX TEXT COLOR (Force Solid Gold)
+                        const textElements = clonedElement.querySelectorAll('h1, span.text-transparent');
+                        textElements.forEach(el => {
+                            el.style.backgroundImage = 'none'; 
+                            el.style.color = '#F3C657';
+                            el.style.webkitTextFillColor = '#F3C657';
+                            el.classList.remove('text-transparent', 'bg-clip-text');
+                        });
+
+                        // B. FIX IMAGE SIZE (Freeze Dimensions)
+                        const clonedImg = clonedElement.querySelector('img');
+                        if (clonedImg && posterWidth) {
+                            clonedImg.style.width = `${posterWidth}px`;
+                            clonedImg.style.height = `${posterHeight}px`;
+                            clonedImg.style.objectFit = 'cover'; 
+                        }
+
+                        // C. FIX ICON ALIGNMENT (The "Floaty Cross" Fix)
+                        // This finds the SVG inside the banner branding area
+                        const brandingContainer = clonedElement.querySelector('.border-b'); 
+                        if(brandingContainer) {
+                            const crossIcon = brandingContainer.querySelector('svg');
+                            if(crossIcon) {
+                                // Pushes the icon DOWN by 5px specifically for the PDF.
+                                // If it's still too high, increase this number (e.g., '8px').
+                                // If it's too low, decrease it.
+                                crossIcon.style.marginTop = '6px'; 
+                            }
+                        }
+                    }
+                });
+
+                const imgData = canvas.toDataURL('image/jpeg', 1.0);
+                const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+                const pdfWidth = 297;
+                const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+
+                pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+                pdf.save(`${targetEvent.Title.replace(/\s+/g, '_')}_Banner.pdf`);
+
+            } catch (err) {
+                console.error("PDF Error:", err);
+                alert("Could not generate PDF.");
+            } finally {
+                document.body.style.cursor = 'default';
+            }
+        };
+
+        return (
+          <section id="banner-mockup" className="py-10 md:py-20 bg-gray-100 overflow-hidden relative">
+             <div className="max-w-7xl mx-auto px-4 text-center mb-6">
+               <div className="flex flex-col md:flex-row items-center justify-center gap-4 mb-2">
+                   <h2 className="text-lg md:text-2xl font-bold text-gray-400 uppercase tracking-widest">Red Carpet Banner Preview</h2>
+                   
+                   {/* === THE DOWNLOAD BUTTON === */}
+                   <button 
+                        onClick={handleDownloadPDF}
+                        className="flex items-center gap-2 bg-ministry-blue text-white px-4 py-2 rounded-sm text-xs font-bold uppercase tracking-widest hover:bg-ministry-gold hover:text-ministry-blue transition shadow-lg border border-white/10"
+                   >
+                       <span>⬇️</span> Download Design
+                   </button>
+               </div>
+               
+               <p className="text-xs text-gray-500">
+                   {realEvent ? `Generating for: ${realEvent.Title}` : "Preview Mode (Demo Data)"}
+               </p>
+             </div>
+
+            {/* THE CONTAINER (ID ADDED: 'banner-to-print') */}
+            <div id="banner-to-print" className="mx-auto w-full max-w-[1200px] md:aspect-[2/1] relative rounded-sm overflow-hidden shadow-2xl flex flex-col md:flex-row bg-[#0B1120]">
+              
+              {/* Background */}
+              <div className="absolute inset-0 opacity-20 bg-[url('https://www.transparenttextures.com/patterns/stardust.png')]"></div>
+              <div className="absolute inset-0 bg-gradient-to-b md:bg-gradient-to-r from-black/80 via-black/40 to-transparent z-0"></div>
+
+              {/* LEFT SIDE: Poster */}
+              <div className="relative z-10 w-full md:w-5/12 h-auto md:h-full flex items-center justify-center p-8 md:p-12 order-1">
+                  <div className="relative w-[200px] md:w-auto h-auto md:h-[85%] aspect-[3/4] rounded-sm shadow-[0_20px_50px_-10px_rgba(0,0,0,0.8)] border-2 border-ministry-gold/40 bg-gray-900 flex items-center justify-center overflow-hidden">
+                    {targetEvent.Poster ? (
+                        <img src={getImageUrl(targetEvent.Poster)} alt="Poster" className="w-full h-full object-cover" crossOrigin="anonymous" />
+                    ) : (
+                        <div className="text-center p-4">
+                           <span className="text-4xl block mb-2 opacity-50">🖼️</span>
+                           <span className="text-[10px] uppercase tracking-widest text-white/50">Poster Area</span>
+                        </div>
+                    )}
+                     <div className="absolute top-3 left-3 bg-red-600 text-white text-[10px] font-bold px-2 py-1 uppercase tracking-widest shadow-lg">
+                        {targetEvent.Category || 'Live'}
+                     </div>
+                  </div>
+              </div>
+
+              {/* RIGHT SIDE: Info */}
+              <div className="relative z-10 w-full md:w-7/12 h-auto md:h-full flex flex-col justify-center px-6 pb-12 md:p-0 md:pr-16 text-left order-2">
+                  
+                  {/* Branding */}
+                  <div className="mb-6 md:mb-8 border-b border-ministry-gold/20 pb-4">
+                     <div className="inline-flex items-center gap-2">
+                       <svg className="h-5 w-5 md:h-6 md:w-6 drop-shadow-sm flex-shrink-0" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <path d="M12 2V22M5 9H19" stroke="url(#gold-banner-mobile)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+                          <defs>
+                            <linearGradient id="gold-banner-mobile" x1="12" y1="2" x2="12" y2="22" gradientUnits="userSpaceOnUse">
+                              <stop offset="0%" stopColor="#BF953F" />
+                              <stop offset="50%" stopColor="#FCF6BA" />
+                              <stop offset="100%" stopColor="#B38728" />
+                            </linearGradient>
+                          </defs>
+                       </svg>
+                       <span className="font-serif text-base md:text-xl font-bold text-gray-300 tracking-wide">JesururuJude.com</span>
+                     </div>
+                  </div>
+
+                  {/* Title */}
+                  <div className="mb-8">
+                    <h3 className="text-ministry-gold font-bold uppercase tracking-[0.2em] text-[10px] md:text-xs mb-2">The Official Gathering</h3>
+                    <h1 className="text-3xl md:text-5xl lg:text-7xl font-serif font-black leading-[1.1] md:leading-[0.95] text-transparent bg-clip-text bg-gradient-to-r from-[#BF953F] via-[#FCF6BA] to-[#B38728] drop-shadow-sm">
+                      {targetEvent.Title}
+                    </h1>
+                  </div>
+
+                  {/* Details */}
+                  <div className="grid grid-cols-1 gap-6 text-gray-300">
+                      <div className="flex items-center gap-4">
+                          <div className="w-10 h-10 md:w-12 md:h-12 rounded-sm bg-white/5 border border-white/10 flex flex-col items-center justify-center text-ministry-gold shrink-0">
+                              <span className="text-lg md:text-xl">📅</span>
+                          </div>
+                          <div>
+                              <p className="text-[10px] uppercase tracking-widest text-gray-500 font-bold">Date & Time</p>
+                              <p className="text-base md:text-xl font-bold text-white tracking-wide">{targetEvent.EventDateTime}</p>
+                          </div>
+                      </div>
+                      <div className="flex items-center gap-4">
+                          <div className="w-10 h-10 md:w-12 md:h-12 rounded-sm bg-white/5 border border-white/10 flex items-center justify-center text-ministry-gold text-lg md:text-xl shrink-0">
+                              📍
+                          </div>
+                          <div>
+                              <p className="text-[10px] uppercase tracking-widest text-gray-500 font-bold">Venue</p>
+                              <p className="text-sm md:text-lg font-bold text-white leading-tight max-w-xs md:max-w-md">{targetEvent.Venue}</p>
+                          </div>
+                      </div>
+                  </div>
+
+                  {/* Tagline */}
+                  <div className="mt-8 pt-4 border-t border-white/10">
+                     <p className="text-[10px] md:text-xs text-ministry-gold/60 uppercase tracking-[0.3em] font-medium">
+                        Bridging Faith & Excellence
+                     </p>
+                  </div>
+              </div>
+            </div>
+          </section>
+        );
+      })()}
       {/* FOOTER */}
       <footer className="bg-ministry-blue text-white py-12 border-t border-white/10">
         <div className="max-w-7xl mx-auto px-4 text-center">
@@ -919,7 +1451,7 @@ function App() {
                             <h2 className="text-2xl font-serif font-bold text-white mb-1">Secure Your Seat</h2>
                             <p className="text-sm text-white/60 mb-6 uppercase tracking-widest">{selectedEvent.Title}</p>
                             <form onSubmit={handleEventRegistrationSubmit} className="space-y-4">
-                                <input type="text" name="name" value={registrationData.name} onChange={handleRegistrationInput} required className="w-full p-3 bg-white/5 border border-white/20 rounded-sm text-white placeholder-white/30" placeholder="Enter your full name" />
+                                <input type="text" name="name" value={registrationData.name} onChange={handleRegistrationInput} required className="w-full p-3 bg-white/5 border border-white/20 rounded-sm text-white placeholder-white/30 capitalize" placeholder="Enter your full name" />
                                 <input type="email" name="email" value={registrationData.email} onChange={handleRegistrationInput} required className="w-full p-3 bg-white/5 border border-white/20 rounded-sm text-white placeholder-white/30" placeholder="name@example.com" />
                                 <select name="attendanceType" value={registrationData.attendanceType || 'Physical'} onChange={handleRegistrationInput} className="w-full p-3 bg-white/5 border border-white/20 rounded-sm text-white"><option value="Physical" className="text-black">Physically</option><option value="Virtual" className="text-black">Virtually</option></select>
                                 <input type="tel" name="phone" placeholder="e.g. +234 80 123 4567" required className="w-full p-3 bg-white/5 border border-white/20 rounded-sm text-white placeholder-white/30" value={registrationData.phone} onChange={(e) => setRegistrationData({...registrationData, phone: e.target.value})} />
