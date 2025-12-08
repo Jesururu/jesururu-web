@@ -228,10 +228,13 @@ const EventTicket = ({ event, isPast, onOpenEvent, onOpenGuestList, onOpenTeam, 
         }
       `}</style>
     );
+  const SUPER_ADMINS = ["superadmin@jesururujude.com"];
 // =========================================
 // MAIN APP COMPONENT
 // =========================================
 function App() {
+  // 1. ADD THIS TO YOUR STATE LIST (Top of function)
+  const [quotes, setQuotes] = useState([]);
   // --- STATE ---
   const [loading, setLoading] = useState(true);
   const [books, setBooks] = useState([]);
@@ -265,11 +268,6 @@ function App() {
   const [preorderModalOpen, setPreorderModalOpen] = useState(false);
   const [selectedBook, setSelectedBook] = useState(null);
   const [purchaseModalOpen, setPurchaseModalOpen] = useState(false);
-
-  // Admin & Gatekeeper State
-  const [adminUser, setAdminUser] = useState(null);
-  const [showLoginModal, setShowLoginModal] = useState(false);
-  const [showAdminDashboard, setShowAdminDashboard] = useState(false);
   
   // GATEKEEPER SPECIFIC STATE
   const [cameraActive, setCameraActive] = useState(false);
@@ -277,11 +275,79 @@ function App() {
   const [checkInStatus, setCheckInStatus] = useState(null); // 'success', 'error', 'warning', 'loading'
   const [checkInMessage, setCheckInMessage] = useState('');
   const [scannedGuest, setScannedGuest] = useState(null);
-  
+
+    // --- HERO SLIDESHOW STATE ---
+  // const [currentHeroIndex, setCurrentHeroIndex] = useState(0);
+  // --- HERO TRIPTYCH STATE (3 Independent Panels) ---
+  const [heroIndex1, setHeroIndex1] = useState(0);
+  const [heroIndex2, setHeroIndex2] = useState(1); // Start at different image
+  const [heroIndex3, setHeroIndex3] = useState(2); // Start at different image
+  // YOUR IMAGES GO HERE (Replace these URLs with your own)
+  // const heroImages = [
+  //   "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?q=80&w=2070&auto=format&fit=crop", 
+  //   "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?q=80&w=2070&auto=format&fit=crop", 
+  //   "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?fit=crop&w=800&q=80",
+  //   "https://images.unsplash.com/photo-1523580494863-6f3031224c94?q=80&w=2070&auto=format&fit=crop", // Added extra for variety
+  //   "https://images.unsplash.com/photo-1516280440614-6697288d5d38?q=80&w=2070&auto=format&fit=crop"
+  // ];
+  const heroImages = [
+    "/slide1.jpg", // Image 1 (Music/Stage)
+    "/slide2.jpg",
+    "/slide3.jpg",
+    "/slide4.jpg",
+    "/slide5.jpg",
+    "/slide6.jpg",
+    "/slide7.jpg",
+    // "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?q=80&w=2070&auto=format&fit=crop", // Image 2 (Worship)
+    // "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?fit=crop&w=800&q=80",             // Image 3 (Portrait/You)
+  ];
+  // PANEL 1 TIMER (Left - Fast: 5s)
+  useEffect(() => {
+    const timer1 = setInterval(() => {
+      setHeroIndex1((prev) => (prev + 1) % heroImages.length);
+    }, 5000);
+    return () => clearInterval(timer1);
+  }, []);
+
+  // PANEL 2 TIMER (Center - Slow: 8s - Focus)
+  useEffect(() => {
+    const timer2 = setInterval(() => {
+      setHeroIndex2((prev) => (prev + 1) % heroImages.length);
+    }, 8000);
+    return () => clearInterval(timer2);
+  }, []);
+
+  // PANEL 3 TIMER (Right - Medium: 6s)
+  useEffect(() => {
+    const timer3 = setInterval(() => {
+      setHeroIndex3((prev) => (prev + 1) % heroImages.length);
+    }, 6000);
+    return () => clearInterval(timer3);
+  }, []);
+
+  const [showAdminLogin, setShowAdminLogin] = useState(false);
+  const [showAdminDashboard, setShowAdminDashboard] = useState(false);
+  const [adminUser, setAdminUser] = useState(null);
   const [adminFormData, setAdminFormData] = useState({
-      activeTab: 'gatekeeper', 
-      targetId: '', targetType: 'event', ministerName: '', ministerRole: '', ministerBio: '', ministerPhoto: null
+    activeTab: 'gatekeeper',
+    select: 'Staff', 
+    targetId: '', 
+    targetType: 'event', 
+    ministerName: '', 
+    ministerRole: '', 
+    ministerBio: '', 
+    ministerPhoto: null
   });
+  // --- QUOTE SLIDER STATE ---
+  const [currentQuoteIndex, setCurrentQuoteIndex] = useState(0);
+
+  // Auto-Change Quotes (Every 6 seconds)
+  useEffect(() => {
+    const quoteTimer = setInterval(() => {
+      setCurrentQuoteIndex((prev) => (prev + 1) % quotes.length);
+    }, 6000); 
+    return () => clearInterval(quoteTimer);
+  }, [quotes.length]);
 
   // =========================================
   // LOGIC: TICKET VERIFICATION (UNIFIED)
@@ -349,7 +415,129 @@ function App() {
           setCheckInMessage('System Error: Check Network');
       }
   };
+  // =========================================
+  // LOGIC: QUOTE MANAGER (Complete)
+  // =========================================
+  
+  // 1. STATE VARIABLES
+  const [editingQuote, setEditingQuote] = useState(null);
+  const [quoteFormText, setQuoteFormText] = useState(""); // Tracks text for word counter
 
+  // 2. FETCH HELPER (Refreshes list after changes)
+  const fetchQuotes = async () => {
+    try {
+        const res = await axios.get(`${STRAPI_URL}/api/quotes`);
+        const raw = res.data.data || [];
+        const processed = raw.map(item => {
+            const attrs = item.attributes || item;
+            return {
+                id: item.id,
+                documentId: item.documentId, // Critical for Strapi v5
+                Text: attrs.Text || attrs.text || "",
+                Highlight: attrs.Highlight || attrs.highlight || "",
+                PostedBy: attrs.PostedBy || attrs.postedBy || ""
+            };
+        });
+        setQuotes(processed);
+    } catch (error) {
+        console.error("Failed to refresh quotes", error);
+    }
+  };
+
+  // 3. ADD QUOTE
+  const handleAddQuote = async (e) => {
+      e.preventDefault();
+      if (!adminUser) return alert("You must be logged in.");
+      
+      const textVal = e.target.quoteText.value;
+      const highlightVal = e.target.quoteHighlight.value;
+      const authorName = adminUser.username || "Admin"; 
+
+      const payload = { Text: textVal, Highlight: highlightVal, PostedBy: authorName };
+
+      try {
+          await axios.post(`${STRAPI_URL}/api/quotes`, { data: payload }, { 
+              headers: { Authorization: `Bearer ${adminUser.token}` } 
+          });
+
+          alert("Wisdom Added Successfully!");
+          setQuoteFormText(""); 
+          e.target.reset();
+          await fetchQuotes(); // Refresh List
+
+      } catch (error) {
+          console.error("Save Error:", error);
+          alert("Failed to save. Check Console.");
+      }
+  };
+
+  // 4. UPDATE QUOTE
+  const handleUpdateQuote = async (e) => {
+      e.preventDefault();
+      if (!adminUser) return alert("You must be logged in.");
+      
+      const textVal = e.target.quoteText.value;
+      const highlightVal = e.target.quoteHighlight.value;
+      const authorName = adminUser.username || "Admin";
+
+      // Determine ID (v5 uses documentId, v4 uses id)
+      const targetId = editingQuote.documentId || editingQuote.id;
+      const payload = { Text: textVal, Highlight: highlightVal, PostedBy: authorName };
+
+      try {
+          await axios.put(`${STRAPI_URL}/api/quotes/${targetId}`, { data: payload }, {
+              headers: { Authorization: `Bearer ${adminUser.token}` }
+          });
+
+          alert("Quote Updated Successfully!");
+          cancelEditing(); // Reset UI
+          await fetchQuotes(); // Refresh List
+
+      } catch (error) {
+          console.error("Update Failed:", error);
+          alert("Failed to update.");
+      }
+  };
+
+  // 5. DELETE QUOTE
+  const handleDeleteQuote = async (quote) => {
+      if (!window.confirm("Delete this quote?")) return;
+      const targetId = quote.documentId || quote.id;
+
+      try {
+          await axios.delete(`${STRAPI_URL}/api/quotes/${targetId}`, {
+              headers: { Authorization: `Bearer ${adminUser.token}` }
+          });
+          alert("Quote Deleted.");
+          if(editingQuote && (editingQuote.id === quote.id)) cancelEditing();
+          await fetchQuotes(); // Refresh List
+      } catch (error) {
+          console.error("Delete Error:", error);
+          alert("Failed to delete.");
+      }
+  };
+
+  // 6. EDITING HELPERS
+  const startEditing = (quote) => {
+      setEditingQuote(quote);
+      const text = quote.Text || quote.text || "";
+      setQuoteFormText(text); // Sync counter
+      
+      setTimeout(() => {
+          if(document.getElementsByName('quoteText')[0]) {
+              document.getElementsByName('quoteText')[0].value = text;
+              document.getElementsByName('quoteHighlight')[0].value = quote.Highlight || quote.highlight || "";
+          }
+      }, 50);
+  };
+
+  const cancelEditing = () => {
+      setEditingQuote(null);
+      setQuoteFormText("");
+      const form = document.querySelector('form[name="quoteForm"]');
+      if (form) form.reset();
+  };
+ 
   // --- TRIGGERS ---
   const handleScan = (scannedRawValue) => {
       if(scannedRawValue) {
@@ -366,18 +554,55 @@ function App() {
   // =========================================
   // LOGIC: ADMIN & TEAM
   // =========================================
-
   const handleAdminLogin = async (e) => {
       e.preventDefault();
-      const form = e.target;
-      const email = form.email.value;
-      const password = form.password.value;
+      
+      console.log(`Attempting login as [${adminFormData.selectedRole}]...`); 
+
       try {
-          const res = await axios.post(`${STRAPI_URL}/api/auth/local`, { identifier: email, password });
-          setAdminUser({ token: res.data.jwt, username: res.data.user.username });
-          setShowLoginModal(false);
-          setShowAdminDashboard(true);
-      } catch { alert("Login Failed: Invalid credentials"); }
+          const res = await axios.post(`${STRAPI_URL}/api/auth/local`, {
+              identifier: adminFormData.username, 
+              password: adminFormData.password
+          });
+
+          const user = res.data.user;
+          const token = res.data.jwt;
+
+          // 1. DETERMINE ACTUAL PERMISSION LEVEL
+          // We check the hardcoded list to see what they are TRULY allowed to do
+          const safeAdminList = (typeof SUPER_ADMINS !== 'undefined') ? SUPER_ADMINS : [];
+          const actualPrivilege = safeAdminList.includes(user.email) ? 'super_admin' : 'staff';
+
+          // 2. VALIDATE SELECTION
+          // If they selected "Super Admin" but the system says they are just "Staff", BLOCK THEM.
+          if (adminFormData.selectedRole === 'super_admin' && actualPrivilege !== 'super_admin') {
+              alert("ACCESS DENIED: You are not authorized to login as Super Admin.");
+              return; // Stop here. Do not let them in.
+          }
+
+          console.log("Login Authorized:", actualPrivilege);
+
+          setAdminUser({
+              username: user.username,
+              email: user.email,
+              token: token,
+              role: adminFormData.selectedRole // Use the role they selected (since we verified it)
+          });
+
+          // Route them to the correct tab based on role
+          setAdminFormData({ 
+              ...adminFormData, 
+              activeTab: adminFormData.selectedRole === 'super_admin' ? 'team' : 'gatekeeper' 
+          });
+
+          setShowAdminLogin(false); // Close modal
+          setShowAdminDashboard(true); // Open dashboard
+
+      } catch (error) {
+          console.error("Login Error:", error);
+          const msg = error.response?.data?.error?.message || "Invalid Credentials";
+          alert(`Login Failed: ${msg}`);
+      }
   };
 
   const handleAddMinister = async (e) => {
@@ -602,14 +827,42 @@ function App() {
     const fetchData = async () => {
       try {
         setLoading(true);
-        const [songsRes, booksRes, moviesRes, regRes, eventRes] = await Promise.all([
+        const [songsRes, booksRes, moviesRes, regRes, eventRes, quotesRes] = await Promise.all([
              axios.get(`${STRAPI_URL}/api/songs?populate=*`),
              axios.get(`${STRAPI_URL}/api/books?populate[0]=CoverArt&populate[1]=TheTeam.Photo&populate[2]=LocalPrices`),
              axios.get(`${STRAPI_URL}/api/movies?populate=*`),
              axios.get(`${STRAPI_URL}/api/registrations?pagination[pageSize]=100`),
-             axios.get(`${STRAPI_URL}/api/events?populate[0]=Poster&populate[1]=Team.Photo`).catch(() => ({ data: { data: [] } }))
+             axios.get(`${STRAPI_URL}/api/events?populate[0]=Poster&populate[1]=Team.Photo`).catch(() => ({ data: { data: [] } })),
+             axios.get(`${STRAPI_URL}/api/quotes`).catch(() => ({ data: { data: [] } })) // <--- NEW FETCH
         ]);
-        setSongs(songsRes.data.data); setBooks(booksRes.data.data); setMovies(moviesRes.data.data); setEvents(eventRes.data.data);
+        setSongs(songsRes.data.data);
+        setBooks(booksRes.data.data);
+        setMovies(moviesRes.data.data);
+        setEvents(eventRes.data.data);
+        setQuotes(quotesRes.data.data);
+        // Process Quotes
+        // ... inside the results processing ...
+      // 1. Process Quotes (Robust Flattening)
+      // 1. Process Quotes (Universal Fix: Grab documentId AND id)
+      const rawQuotes = quotesRes.data.data || [];
+      const fetchedQuotes = rawQuotes.map(item => {
+          const attrs = item.attributes || item;
+          return {
+              id: item.id,
+              documentId: item.documentId, // <--- CRITICAL FOR STRAPI V5
+              Text: attrs.Text || attrs.text || "", 
+              Highlight: attrs.Highlight || attrs.highlight || ""
+          };
+      });
+       // 2. Set State (Use Demo data ONLY if database is truly empty)
+        if (fetchedQuotes.length > 0) {
+            setQuotes(fetchedQuotes);
+        } else {
+            setQuotes([
+              { Text: "To be filled with the earthly is to be emptied of the eternal.", Highlight: "eternal" },
+              { Text: "Excellence is not a skill, it is the posture of a heart that honors God.", Highlight: "Excellence" }
+            ]);
+        }
         const flattened = regRes.data.data.map(item => ({ id: item.id, ...(item.attributes || item) }));
         setAllRegistrations(flattened);
       } catch (error) { console.error("Fetch Error:", error); } 
@@ -798,11 +1051,16 @@ function App() {
 
                       {/* Controls Row */}
                       <div className="flex w-full md:w-auto gap-2">
-                          <button onClick={() => setAdminFormData({...adminFormData, activeTab: 'gatekeeper'})} className={`flex-1 md:flex-none px-3 py-2 rounded text-[10px] md:text-xs font-bold uppercase tracking-widest border border-white/20 transition ${adminFormData.activeTab === 'gatekeeper' ? 'bg-ministry-gold text-ministry-blue border-ministry-gold' : 'hover:bg-white/10'}`}>Scanner</button>
+                        <button onClick={() => setAdminFormData({...adminFormData, activeTab: 'gatekeeper'})} className={`flex-1 md:flex-none px-3 py-2 rounded text-[10px] md:text-xs font-bold uppercase tracking-widest border border-white/20 transition ${adminFormData.activeTab === 'gatekeeper' ? 'bg-ministry-gold text-ministry-blue border-ministry-gold' : 'hover:bg-white/10'}`}>Scanner</button>
+                        {/* 2. SUPER ADMIN TABS (Only visible if role is 'super_admin') */}
+                        {adminUser.role === 'super_admin' && (
+                          <>
+                          <button onClick={() => setAdminFormData({...adminFormData, activeTab: 'quotes'})} className={`flex-1 md:flex-none px-3 py-2 rounded text-[10px] md:text-xs font-bold uppercase tracking-widest border border-white/20 transition ${adminFormData.activeTab === 'quotes' ? 'bg-ministry-gold text-ministry-blue border-ministry-gold' : 'hover:bg-white/10'}`}>Quotes</button>
                           <button onClick={() => setAdminFormData({...adminFormData, activeTab: 'team'})} className={`flex-1 md:flex-none px-3 py-2 rounded text-[10px] md:text-xs font-bold uppercase tracking-widest border border-white/20 transition ${adminFormData.activeTab === 'team' ? 'bg-ministry-gold text-ministry-blue border-ministry-gold' : 'hover:bg-white/10'}`}>Team</button>
-                          <button onClick={() => { setAdminUser(null); setShowAdminDashboard(false); }} className="bg-red-600 px-3 py-2 rounded text-[10px] md:text-xs font-bold uppercase tracking-widest hover:bg-red-700">Logout</button>
-                      </div>
-                      
+                          </>
+                        )}
+                        <button onClick={() => {setAdminUser(null); setShowAdminDashboard(false); }} className="bg-red-600 px-3 py-2 rounded text-[10px] md:text-xs font-bold uppercase tracking-widest hover:bg-red-700">Logout</button>
+                      </div>                      
                       {/* Close Button (Desktop Only) */}
                       <button onClick={() => setShowAdminDashboard(false)} className="hidden md:block text-white/50 hover:text-white text-2xl font-bold">✕</button>
                   </div>
@@ -945,6 +1203,108 @@ function App() {
                               </form>
                           </div>
                       )}
+                      {/* === TAB 3: QUOTE MANAGER (Complete UI) === */}
+                      {adminFormData.activeTab === 'quotes' && (
+                          <div className="bg-white p-4 md:p-8 rounded shadow-lg max-w-3xl mx-auto flex flex-col md:flex-row gap-8">
+                              
+                              {/* LEFT COLUMN: Input Form */}
+                              <div className="w-full md:w-5/12">
+                                  <div className="flex justify-between items-center border-b pb-2 mb-4">
+                                      <h3 className={`text-lg font-bold uppercase tracking-widest ${editingQuote ? 'text-ministry-gold' : 'text-gray-700'}`}>
+                                          {editingQuote ? 'Editing Quote' : 'Add Wisdom'}
+                                      </h3>
+                                      {editingQuote && (
+                                          <button type="button" onClick={cancelEditing} className="text-[10px] text-red-500 hover:text-red-700 font-bold uppercase underline">Cancel</button>
+                                      )}
+                                  </div>
+
+                                  <form name="quoteForm" onSubmit={editingQuote ? handleUpdateQuote : handleAddQuote} className="space-y-4">
+                                      <div>
+                                          <div className="flex justify-between mb-1">
+                                              <label className="block text-[10px] font-bold uppercase text-gray-400">Quote Text</label>
+                                              {/* WORD COUNTER */}
+                                              <span className={`text-[10px] font-bold ${quoteFormText.split(/\s+/).filter(Boolean).length > 20 ? 'text-red-500' : 'text-ministry-gold'}`}>
+                                                  {quoteFormText.split(/\s+/).filter(Boolean).length} Words
+                                              </span>
+                                          </div>
+                                          <textarea 
+                                              name="quoteText" 
+                                              placeholder="Enter quote here..." 
+                                              onChange={(e) => setQuoteFormText(e.target.value)}
+                                              className={`w-full p-3 border focus:border-ministry-gold outline-none text-sm rounded-sm bg-gray-50 ${editingQuote ? 'border-ministry-gold bg-yellow-50' : 'border-gray-300'}`} 
+                                              rows="5" 
+                                              required
+                                          ></textarea>
+                                      </div>
+
+                                      <div>
+                                          <label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Highlight Words</label>
+                                          <input 
+                                              type="text" 
+                                              name="quoteHighlight" 
+                                              placeholder="e.g. Earthly, Eternal" 
+                                              className={`w-full p-3 border focus:border-ministry-gold outline-none text-sm rounded-sm bg-gray-50 ${editingQuote ? 'border-ministry-gold bg-yellow-50' : 'border-gray-300'}`} 
+                                          />
+                                          <p className="text-[9px] text-gray-400 mt-1">Separate multiple words with commas.</p>
+                                      </div>
+                                      
+                                      <button className={`w-full py-3 font-bold uppercase tracking-widest transition shadow-md text-xs rounded-sm border ${
+                                          editingQuote 
+                                          ? 'bg-ministry-gold text-[#0B1120] hover:bg-white hover:text-[#0B1120] border-ministry-gold' 
+                                          : 'bg-ministry-blue text-white hover:bg-ministry-gold hover:text-white border-transparent'
+                                      }`}>
+                                          {editingQuote ? 'Update Changes' : 'Post Quote'}
+                                      </button>
+                                  </form>
+                              </div>
+
+                              {/* RIGHT COLUMN: Library List */}
+                              <div className="w-full md:w-7/12 border-t md:border-t-0 md:border-l border-gray-200 pt-6 md:pt-0 md:pl-8">
+                                  <h3 className="text-lg font-bold mb-4 text-gray-700 uppercase tracking-widest border-b pb-2 flex justify-between items-center">
+                                      <span>Library</span>
+                                      <span className="text-xs bg-gray-100 px-2 py-1 rounded-full text-gray-500">{quotes.length} Items</span>
+                                  </h3>
+                                  
+                                  <div className="max-h-[400px] overflow-y-auto custom-scrollbar pr-2 space-y-3">
+                                      {quotes.length === 0 ? (
+                                          <p className="text-xs text-gray-400 italic text-center py-10 bg-gray-50 rounded">Library is empty.</p>
+                                      ) : (
+                                          quotes.map((q, i) => {
+                                              const text = q.Text || q.text || "Untitled";
+                                              const highlight = q.Highlight || q.highlight || "";
+
+                                              return (
+                                                  <div key={q.id || i} className={`p-4 rounded border transition relative group ${editingQuote && (editingQuote.id === q.id) ? 'bg-yellow-50 border-ministry-gold shadow-md scale-[1.02]' : 'bg-gray-50 border-gray-200 hover:border-ministry-gold'}`}>
+                                                      
+                                                      <p className="text-xs text-gray-700 font-serif leading-relaxed mb-3 pr-8">"{text}"</p>
+                                                      
+                                                      {highlight && (
+                                                          <div className="flex flex-wrap gap-1">
+                                                              {highlight.split(',').map((h, idx) => (
+                                                                  <span key={idx} className="text-[9px] uppercase tracking-wider bg-white border border-gray-200 text-gray-600 px-1.5 py-0.5 rounded shadow-sm">
+                                                                      {h.trim()}
+                                                                  </span>
+                                                              ))}
+                                                          </div>
+                                                      )}
+
+                                                      {/* Actions */}
+                                                      <div className="absolute top-2 right-2 flex gap-1">
+                                                          <button onClick={() => startEditing(q)} className="p-1 text-gray-300 hover:text-ministry-blue transition" title="Edit">
+                                                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
+                                                          </button>
+                                                          <button onClick={() => handleDeleteQuote(q)} className="p-1 text-gray-300 hover:text-red-600 transition" title="Delete">
+                                                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                                          </button>
+                                                      </div>
+                                                  </div>
+                                              );
+                                          })
+                                      )}
+                                  </div>
+                              </div>
+                          </div>
+                      )}
                   </div>
               </div>
           </div>
@@ -957,26 +1317,27 @@ function App() {
   return (
     <div className="w-full overflow-x-hidden font-sans text-gray-800">
       <GlobalStyles />
-      {/* NAVBAR */}
-      <nav className="fixed w-full z-50 bg-white/95 backdrop-blur-md shadow-sm border-b border-gray-100">
+      {/* NAVBAR (Premium Dark Mode) */}
+      <nav className="fixed w-full z-50 bg-[#0B1120]/95 backdrop-blur-md shadow-lg border-b border-white/10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-20">
-            {/* Paste <GlobalStyles /> inside your main return, right at the top */}
-            <GlobalStyles /> 
-
+            
+            {/* LOGO SECTION (Fixed: Slogan Restored & Colored Gold) */}
             <div className="flex-shrink-0 cursor-pointer group" onClick={() => scrollToSection('home')}>
               <div className="relative flex flex-col items-start justify-center">
                 
-                {/* 1. TOP LINE: THE BRAND LOGO (Responsive Container) */}
-                {/* Mobile: tighter padding (px-2 py-1.5) | Desktop: looser padding (md:px-3 md:py-2) */}
-                <div className="flex items-center gap-1.5 md:gap-2 bg-[#0B1120] px-2 py-1.5 md:px-3 md:py-2 rounded-sm shadow-[0_4px_10px_rgba(0,0,0,0.2)] border border-[#BF953F]/30 hover:border-[#BF953F] transition-all duration-500 group-hover:-translate-y-0.5">
+                {/* LOGO SECTION (Mobile: Always Visible | Desktop: Hover Reveal) */}
+            <div className="flex-shrink-0 cursor-pointer group" onClick={() => scrollToSection('home')}>
+              <div className="relative flex flex-col items-start justify-center">
+                
+                {/* 1. THE LOGO BOX */}
+                <div className="flex items-center gap-1.5 md:gap-2 px-1.5 py-1 md:px-3 md:py-2 rounded-sm border border-[#BF953F]/50 hover:border-[#BF953F] transition-all duration-500 group-hover:-translate-y-0.5 bg-black/20 relative z-10">
                   
-                  {/* === THE CROSS (Responsive Size) === */}
-                  {/* Mobile: h-4 w-4 | Desktop: h-5 w-5 */}
-                  <svg className="h-4 w-4 md:h-5 md:w-5 drop-shadow-sm flex-shrink-0" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M12 2V22M5 9H19" stroke="url(#gold-cross-gradient)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+                  {/* CROSS ICON */}
+                  <svg className="h-3 w-3 md:h-5 md:w-5 drop-shadow-sm flex-shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M12 2V22M5 9H19" stroke="url(#gold-cross-nav-fixed-mob)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
                     <defs>
-                      <linearGradient id="gold-cross-gradient" x1="12" y1="2" x2="12" y2="22" gradientUnits="userSpaceOnUse">
+                      <linearGradient id="gold-cross-nav-fixed-mob" x1="12" y1="2" x2="12" y2="22" gradientUnits="userSpaceOnUse">
                         <stop offset="0%" stopColor="#BF953F" />
                         <stop offset="50%" stopColor="#FCF6BA" />
                         <stop offset="100%" stopColor="#B38728" />
@@ -984,37 +1345,82 @@ function App() {
                     </defs>
                   </svg>
 
-                  {/* THE NAME (Responsive Text Size) */}
-                  {/* Mobile: text-lg | Desktop: text-2xl */}
-                  <span className="font-serif text-lg md:text-2xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-[#BF953F] via-[#FCF6BA] to-[#BF953F] animate-liquid-gold whitespace-nowrap">
+                  {/* NAME */}
+                  <span className="font-serif text-sm md:text-2xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-[#BF953F] via-[#FCF6BA] to-[#BF953F] animate-liquid-gold whitespace-nowrap">
                     JesururuJude
                   </span>
 
-                  {/* THE EXTENSION (Responsive Tag) */}
-                  {/* Scales height and font size automatically */}
-                  <span className="flex items-center justify-center h-4 md:h-5 px-1 bg-gradient-to-b from-[#BF953F] to-[#8C6D2E] text-[#0B1120] text-[8px] md:text-[9px] font-bold font-sans tracking-widest rounded-[2px] shadow-sm ml-0.5 md:ml-1">
+                  {/* EXTENSION */}
+                  <span className="flex items-center justify-center h-3 md:h-5 px-0.5 md:px-1 bg-gradient-to-b from-[#BF953F] to-[#8C6D2E] text-[#0B1120] text-[6px] md:text-[9px] font-bold font-sans tracking-widest rounded-[1px] md:rounded-[2px] shadow-sm ml-0.5 md:ml-1 mt-0.5">
                     .COM
                   </span>
                 </div>
 
-                {/* 2. BOTTOM LINE: THE PROMISE (Desktop Only) */}
-                {/* Hidden on mobile (hidden) to save space, Visible on desktop (md:block) */}
-                <div className="absolute -bottom-4 left-0 w-full text-center opacity-0 group-hover:opacity-100 transition-all duration-500 transform translate-y-2 group-hover:translate-y-0 hidden md:block">
-                  <span className="text-[8px] uppercase tracking-[0.3em] font-bold text-ministry-blue">
+                {/* 2. THE SLOGAN (Smart Display) */}
+                {/* LOGIC EXPLAINED:
+                   - opacity-100: Visible by default (Mobile)
+                   - md:opacity-0: Hidden by default on Desktop
+                   - md:group-hover:opacity-100: Visible on Hover (Desktop)
+                */}
+                <div className="absolute -bottom-3 md:-bottom-4 left-0 w-full text-center transition-all duration-500 transform translate-y-0 md:translate-y-2 md:group-hover:translate-y-0 opacity-100 md:opacity-0 md:group-hover:opacity-100 block">
+                  <span className="text-[6px] md:text-[8px] uppercase tracking-[0.2em] md:tracking-[0.3em] font-bold text-ministry-gold/80 whitespace-nowrap">
                     Faith & Excellence
                   </span>
                 </div>
 
               </div>
             </div>
-            <div className="hidden md:flex space-x-8 items-center">
-              {['Home', 'About', 'Books', 'Films', 'Worship'].map((item) => (
-                <button key={item} onClick={() => scrollToSection(item.toLowerCase())} className="text-sm font-bold uppercase text-ministry-blue hover:text-ministry-gold transition">{item}</button>
-              ))}
-              <button onClick={() => setShowModal(true)} className="bg-ministry-gold text-white px-6 py-2 rounded-sm font-bold uppercase text-xs tracking-widest hover:bg-ministry-blue transition">Invite</button>
+
+                {/* 2. THE SLOGAN (Restored) */}
+                {/* Changes: 
+                    - Color is now 'text-ministry-gold' (visible on dark bg) 
+                    - 'hidden md:block' ensures it doesn't break mobile layout
+                */}
+                <div className="absolute -bottom-4 left-0 w-full text-center opacity-0 group-hover:opacity-100 transition-all duration-500 transform translate-y-2 group-hover:translate-y-0 hidden md:block">
+                  <span className="text-[8px] uppercase tracking-[0.3em] font-bold text-ministry-gold/80">
+                    Faith & Excellence
+                  </span>
+                </div>
+
+              </div>
             </div>
+
+            {/* DESKTOP MENU (White Text + Gold Hover) */}
+            <div className="hidden md:flex items-center gap-8">
+              <div className="flex gap-6">
+                {['Home', 'About', 'Events', 'Books', 'Films', 'Worship'].map((item) => (
+                  <button 
+                    key={item} 
+                    onClick={() => scrollToSection(item.toLowerCase())} 
+                    className="text-xs font-bold uppercase tracking-widest text-gray-300 hover:text-ministry-gold transition-colors relative group"
+                  >
+                    {item}
+                    <span className="absolute -bottom-1 left-0 w-0 h-[1px] bg-ministry-gold transition-all duration-300 group-hover:w-full"></span>
+                  </button>
+                ))}
+              </div>
+
+              <div className="h-4 w-[1px] bg-white/20"></div>
+
+              {/* Social Icons (Light Gray -> Gold) */}
+              <div className="flex items-center gap-4">
+                 <a href="https://instagram.com" target="_blank" rel="noreferrer" className="text-gray-400 hover:text-ministry-gold transition-colors">
+                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/></svg>
+                 </a>
+                 <a href="https://youtube.com" target="_blank" rel="noreferrer" className="text-gray-400 hover:text-red-600 transition-colors">
+                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M19.615 3.184c-3.604-.246-11.631-.245-15.23 0-3.897.266-4.356 2.62-4.385 8.816.029 6.185.484 8.549 4.385 8.816 3.6.245 11.626.246 15.23 0 3.897-.266 4.356-2.62 4.385-8.816-.029-6.185-.484-8.549-4.385-8.816zm-10.615 12.816v-8l8 3.993-8 4.007z"/></svg>
+                 </a>
+              </div>
+
+              {/* ACTION BUTTON (Gold) */}
+              <button onClick={() => setShowModal(true)} className="bg-ministry-gold text-[#0B1120] px-5 py-2.5 rounded-sm font-bold uppercase text-[10px] tracking-widest hover:bg-white hover:text-[#0B1120] transition shadow-[0_0_15px_rgba(191,149,63,0.3)]">
+                Invite
+              </button>
+            </div>
+
+            {/* MOBILE MENU BUTTON (Gold) */}
             <div className="md:hidden flex items-center">
-              <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="text-ministry-blue hover:text-ministry-gold focus:outline-none">
+              <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="text-ministry-gold hover:text-white focus:outline-none">
                 <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   {mobileMenuOpen ? (<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />) : (<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />)}
                 </svg>
@@ -1022,45 +1428,196 @@ function App() {
             </div>
           </div>
         </div>
+
+        {/* MOBILE MENU DROPDOWN (Dark Theme) */}
         {mobileMenuOpen && (
-          <div className="md:hidden bg-white border-t border-gray-100 absolute w-full shadow-xl">
+          <div className="md:hidden bg-[#0B1120] border-t border-white/10 absolute w-full shadow-2xl">
             <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3 flex flex-col items-center">
-              {['Home', 'About', 'Books', 'Films', 'Worship'].map((item) => (
-                <button key={item} onClick={() => scrollToSection(item.toLowerCase())} className="block px-3 py-4 text-base font-bold text-ministry-blue hover:text-ministry-gold">{item}</button>
+              {['Home', 'About', 'Events', 'Books', 'Films', 'Worship'].map((item) => (
+                <button key={item} onClick={() => scrollToSection(item.toLowerCase())} className="block px-3 py-4 text-sm font-bold text-gray-300 hover:text-ministry-gold uppercase tracking-widest">{item}</button>
               ))}
-              <button onClick={() => setShowModal(true)} className="w-full mt-4 bg-ministry-gold text-white py-3 font-bold uppercase tracking-widest">Invite</button>
+              <div className="flex gap-6 py-4">
+                 <a href="#" className="text-gray-400 hover:text-ministry-gold"><svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/></svg></a>
+                 <a href="#" className="text-gray-400 hover:text-red-600"><svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M19.615 3.184c-3.604-.246-11.631-.245-15.23 0-3.897.266-4.356 2.62-4.385 8.816.029 6.185.484 8.549 4.385 8.816 3.6.245 11.626.246 15.23 0 3.897-.266 4.356-2.62 4.385-8.816-.029-6.185-.484-8.549-4.385-8.816zm-10.615 12.816v-8l8 3.993-8 4.007z"/></svg></a>
+              </div>
+              <button onClick={() => setShowModal(true)} className="w-full mt-2 bg-ministry-gold text-[#0B1120] py-3 font-bold uppercase tracking-widest hover:bg-white transition">Invite</button>
             </div>
           </div>
         )}
       </nav>
 
-      {/* HERO SECTION */}
-      <header id="home" className="relative pt-24 pb-12 min-h-screen flex items-center bg-gray-50 overflow-hidden">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-8 items-center">
-          <div className="text-center lg:text-left order-2 lg:order-1 relative z-10">
-            <div className="inline-block border-b-2 border-ministry-gold pb-2 mb-4">
-                <span className="text-ministry-gold font-bold tracking-[0.2em] uppercase text-xs">Official Ministry Portfolio</span>
+      {/* HERO SECTION (Triptych Layout - 3 Split Panels) */}
+      {/* HERO SECTION (Symmetrical Central Axis Layout) */}
+      {/* HERO SECTION (Dimmed Background for Maximum Readability) */}
+      {/* HERO SECTION (Grayscale 'Noir' Edition) */}
+      {/* HERO SECTION (High-Contrast Grayscale - Sharper Images) */}
+      <header id="home" className="relative min-h-screen flex items-center justify-center overflow-hidden pt-24 pb-12 bg-black">
+        
+        {/* === BACKGROUND TRIPTYCH (Brighter & Sharper) === */}
+        <div className="absolute inset-0 z-0 grid grid-cols-1 md:grid-cols-3 gap-1 md:gap-0 pointer-events-none">
+            
+            {/* PANEL 1 (Left) */}
+            <div className="relative hidden md:block h-full overflow-hidden border-r border-white/10">
+                {heroImages.map((img, index) => (
+                    <div key={index} className={`absolute inset-0 transition-all duration-[2000ms] ease-in-out ${index === heroIndex1 ? 'opacity-80 scale-110' : 'opacity-0 scale-100'}`}>
+                        {/* High Contrast + Grayscale = "Sharp" Look */}
+                        <img src={img} alt="" className="w-full h-full object-cover grayscale contrast-125" />
+                    </div>
+                ))}
+                {/* Lighter Overlay (Was 80%, now 50%) */}
+                <div className="absolute inset-0 bg-black/50"></div>
             </div>
-            <h1 className="text-5xl md:text-7xl font-serif font-bold text-ministry-blue leading-tight mb-6">Jude <br/><span className="text-gold-metallic">Jesururu</span></h1>
-            <p className="text-lg text-gray-600 mb-8 max-w-lg mx-auto lg:mx-0 leading-relaxed">Proclaiming the Kingdom through worship, writing, and filmmaking. Bridging the gap between faith and excellence.</p>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start">
-              <button onClick={() => setShowModal(true)} className="bg-ministry-blue text-white px-8 py-4 font-bold tracking-widest uppercase hover:bg-ministry-gold transition shadow-lg rounded-sm">Invite For Ministry</button>
-              <button onClick={() => scrollToSection('books')} className="border-2 border-ministry-blue text-ministry-blue px-8 py-4 font-bold tracking-widest uppercase hover:bg-ministry-blue hover:text-white transition rounded-sm">Resources</button>
-            </div>
-          </div>
-          <div className="relative order-1 lg:order-2 flex justify-center items-center mt-6 lg:mt-0">
-            <div className="relative h-[420px] w-[300px] sm:h-[550px] sm:w-[380px] lg:h-[600px] lg:w-[420px] animate-float mx-auto">
-              <div className="absolute -inset-4 bg-ministry-gold/30 blur-3xl rounded-[30px] -z-10"></div>
-              <div className="h-full w-full bg-gradient-to-tr from-[#BF953F] via-[#FCF6BA] to-[#B38728] p-[3px] rounded-[24px] shadow-[0_25px_60px_-15px_rgba(0,35,102,0.4)] relative z-10">
-                  <div className="h-full w-full bg-ministry-blue rounded-[21px] overflow-hidden relative">
-                      <img src="/me.jpg" alt="Jude Jesururu" className="w-full h-full object-cover" onError={(e) => {e.target.src = 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?fit=crop&w=800&q=80'}} />
-                  </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </header>
 
+            {/* PANEL 2 (Center - The Focus) */}
+            <div className="relative h-full overflow-hidden">
+                {heroImages.map((img, index) => (
+                    <div key={index} className={`absolute inset-0 transition-all duration-[2000ms] ease-in-out ${index === heroIndex2 ? 'opacity-100 scale-100' : 'opacity-0 scale-105'}`}>
+                        <img src={img} alt="" className="w-full h-full object-cover grayscale contrast-110" />
+                    </div>
+                ))}
+                
+                {/* Very Light Overlay (Was 60%, now 30%) 
+                    We rely on the "text-shadow" to keep text readable now.
+                */}
+                <div className="absolute inset-0 bg-black/30 backdrop-blur-[0px]"></div>
+            </div>
+
+            {/* PANEL 3 (Right) */}
+            <div className="relative hidden md:block h-full overflow-hidden border-l border-white/10">
+                {heroImages.map((img, index) => (
+                    <div key={index} className={`absolute inset-0 transition-all duration-[2000ms] ease-in-out ${index === heroIndex3 ? 'opacity-80 scale-110' : 'opacity-0 scale-100'}`}>
+                        <img src={img} alt="" className="w-full h-full object-cover grayscale contrast-125" />
+                    </div>
+                ))}
+                {/* Lighter Overlay (Was 80%, now 50%) */}
+                <div className="absolute inset-0 bg-black/50"></div>
+            </div>
+        </div>
+
+        {/* === MAIN CONTENT === */}
+        <div className="relative z-30 w-full max-w-4xl mx-auto px-4 flex flex-col items-center text-center">
+            
+            {/* 1. Identity Tag */}
+            <div className="inline-flex items-center gap-3 border-b border-ministry-gold/60 pb-3 mb-6 animate-fade-in-up">
+                {/* Added 'drop-shadow-md' to ensure small text is readable on lighter background */}
+                <span className="text-ministry-gold font-bold tracking-[0.3em] uppercase text-[10px] md:text-xs drop-shadow-md">
+                    Official Ministry Portfolio
+                </span>
+                <span className="h-1 w-1 rounded-full bg-ministry-gold shadow-sm"></span>
+                <span className="text-gray-300 font-serif italic text-xs drop-shadow-md">Est. 2020</span>
+            </div>
+
+            {/* 2. Headline */}
+            {/* Increased drop-shadow to '2xl' and added a text-shadow class via style for safety */}
+            <h1 className="text-5xl md:text-8xl font-serif font-bold text-white leading-[0.9] mb-6 drop-shadow-[0_5px_5px_rgba(0,0,0,0.8)] animate-fade-in-up delay-100">
+              Jude <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#BF953F] via-[#FCF6BA] to-[#B38728] drop-shadow-sm">Jesururu</span>
+            </h1>
+
+            {/* 3. Roles */}
+            <div className="flex flex-wrap justify-center gap-3 md:gap-4 text-[10px] md:text-sm font-bold uppercase tracking-widest text-gray-300 mb-8 animate-fade-in-up delay-200 drop-shadow-md">
+                <span>Author</span><span className="text-ministry-gold">•</span>
+                <span>Filmmaker</span><span className="text-ministry-gold">•</span>
+                <span>Psalmist</span><span className="text-ministry-gold">•</span>
+                <span>Speaker</span>
+            </div>
+
+            {/* 4. The Mandate */}
+            {/* Changed text color from gray-200 to white/90 for better visibility */}
+            <p className="text-sm md:text-xl text-white/90 mb-8 max-w-xl leading-relaxed drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] font-light animate-fade-in-up delay-300">
+              "My mandate is simple: To bridge the gap between <strong className="text-white font-bold">Faith</strong> and <strong className="text-white font-bold">Excellence</strong> through creative expression and Kingdom truths."
+            </p>
+
+            {/* 5. Buttons */}
+            <div className="flex flex-col sm:flex-row gap-4 animate-fade-in-up delay-300 w-full sm:w-auto mb-12">
+              <button onClick={() => setShowModal(true)} className="bg-ministry-gold text-ministry-blue px-8 py-4 font-bold tracking-widest uppercase hover:bg-white hover:scale-105 transition-all duration-300 shadow-[0_0_30px_rgba(191,149,63,0.4)] rounded-sm text-xs border border-ministry-gold">
+                Invite Jude
+              </button>
+              {/* Added bg-black/30 to the transparent button so it's readable over any image */}
+              <button onClick={() => scrollToSection('books')} className="border border-white/40 bg-black/20 text-white px-8 py-4 font-bold tracking-widest uppercase hover:bg-white hover:text-ministry-blue transition-all duration-300 rounded-sm text-xs backdrop-blur-sm">
+                View Resources
+              </button>
+            </div>
+
+            {/* 6. FEATURED CARD */}
+            <div className="w-full max-w-md bg-black/40 backdrop-blur-md border border-white/20 p-4 rounded-sm shadow-2xl relative group hover:border-ministry-gold/50 transition-colors animate-fade-in-up delay-500">
+                <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-ministry-gold text-[#0B1120] text-[10px] font-bold px-3 py-1 uppercase tracking-widest shadow-lg">Latest Release</div>
+                {books.length > 0 ? (
+                    <div className="flex gap-4 items-center text-left">
+                        <div className="w-14 h-20 bg-gray-800 flex-shrink-0 shadow-lg border border-white/10">
+                            {books[0].CoverArt ? <img src={getImageUrl(books[0].CoverArt)} className="w-full h-full object-cover" alt="Cover" /> : <div className="w-full h-full bg-gray-700"></div>}
+                        </div>
+                        <div className="flex-1">
+                            <h4 className="text-white font-serif font-bold text-base leading-tight mb-1 line-clamp-1 drop-shadow-md">{books[0].Title}</h4>
+                            <p className="text-gray-300 text-[10px] line-clamp-2 mb-2">{getSynopsisText(books[0].Synopsis)}</p>
+                            <button onClick={() => scrollToSection('books')} className="text-ministry-gold text-[9px] font-bold uppercase tracking-widest border-b border-ministry-gold/50 pb-0.5 hover:text-white hover:border-white transition-colors">
+                                Get Copy →
+                            </button>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="text-white text-xs py-2 text-center opacity-50">Loading resources...</div>
+                )}
+            </div>
+
+        </div>
+
+        {/* BOTTOM: Signature Scripture */}
+        <div className="absolute bottom-4 left-0 w-full text-center z-30 px-4 animate-fade-in-up delay-700 hidden md:block">
+            <p className="text-xs text-white/60 font-serif italic drop-shadow-md">
+                "But by the grace of God I am what I am." — <span className="text-ministry-gold/80 not-italic font-bold">1 Corinthians 15:10</span>
+            </p>
+        </div>
+
+      </header>
+      {/* ========================================= */}
+      {/* THE CATCHPHRASE (Cinematic Typography)    */}
+      {/* ========================================= */}
+      {/* ========================================= */}
+      {/* QUOTE SLIDER (With Multi-Highlight)       */}
+      {/* ========================================= */}
+      <section className="py-24 bg-[#0B1120] flex items-center justify-center relative overflow-hidden border-b border-white/5">
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[300px] h-[300px] bg-ministry-gold/5 blur-[100px] rounded-full"></div>
+          
+          <div className="relative z-10 max-w-5xl mx-auto px-6 text-center w-full">
+              <div className="mb-8 flex justify-center opacity-50"><svg className="h-6 w-6 text-ministry-gold" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1"><path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" /></svg></div>
+
+              <div className="min-h-[160px] md:min-h-[200px] flex items-center justify-center transition-all duration-1000">
+                  {quotes.map((quote, index) => {
+                      const quoteText = quote.Text || quote.text || "No text available";
+                      const quoteHighlight = quote.Highlight || quote.highlight || "";
+
+                      return (
+                          <div key={index} className={`absolute w-full max-w-4xl transition-all duration-1000 ease-in-out transform px-4 ${index === currentQuoteIndex ? 'opacity-100 translate-y-0 scale-100 blur-0' : 'opacity-0 translate-y-4 scale-95 blur-sm pointer-events-none'}`}>
+                            <h2 className="text-2xl md:text-4xl lg:text-5xl font-serif font-bold leading-tight text-gray-400">
+                                "{quoteText.split(' ').map((word, i) => {
+                                    // Multi-Highlight Logic
+                                    const cleanWord = word.replace(/[.,!?;:"]/g, ''); 
+                                    const highlights = quoteHighlight.split(',').map(h => h.trim().toLowerCase());
+                                    const isHighlight = highlights.includes(cleanWord.toLowerCase());
+                                    
+                                    return (
+                                        <span key={i} className={isHighlight ? "text-transparent bg-clip-text bg-gradient-to-r from-[#BF953F] via-[#FCF6BA] to-[#B38728] italic" : ""}>
+                                            {word}{' '}
+                                        </span>
+                                    );
+                                })}"
+                            </h2>
+                          </div>
+                      );
+                  })}
+              </div>
+
+              <div className="mt-12 flex flex-col items-center gap-6">
+                  <div className="h-8 w-[1px] bg-gradient-to-b from-ministry-gold to-transparent opacity-30"></div>
+                  <div className="flex gap-3">
+                      {quotes.map((_, idx) => (
+                          <button key={idx} onClick={() => setCurrentQuoteIndex(idx)} className={`h-1.5 rounded-full transition-all duration-500 ${idx === currentQuoteIndex ? 'w-8 bg-ministry-gold' : 'w-1.5 bg-gray-700 hover:bg-gray-500'}`} />
+                      ))}
+                  </div>
+                  <span className="text-[10px] uppercase tracking-[0.4em] text-ministry-gold/40 font-sans font-bold mt-2">Jude Jesururu</span>
+              </div>
+          </div>
+      </section>
       {/* EVENTS SECTION */}
       {(upcomingEvents.length > 0 || pastEvents.length > 0) && (
         <section id="events" className="py-20 bg-gray-50 border-b border-gray-200">
@@ -1378,7 +1935,7 @@ function App() {
         <div className="max-w-7xl mx-auto px-4 text-center">
           <h3 className="font-serif text-2xl font-bold text-ministry-gold mb-4">JUDE JESURURU</h3>
           <p className="text-gray-400 text-sm mb-6">© {new Date().getFullYear()} All Rights Reserved.</p>
-          <div className="mt-8"><button onClick={() => setShowLoginModal(true)} className="text-[10px] text-gray-600 hover:text-white transition">Admin Login</button></div>
+          <div className="mt-8"><button onClick={() => setShowAdminLogin(true)} className="text-[10px] text-gray-600 hover:text-white transition">Admin Login</button></div>
         </div>
       </footer>
 
@@ -1559,7 +2116,7 @@ function App() {
 
       {teamModalOpen && selectedEvent && (
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4 animate-fade-in">
-          <div className="bg-gray-900 w-full max-w-3xl rounded-sm shadow-2xl relative overflow-hidden flex flex-col max-h-[85vh] border border-white/10">                
+          <div className="bg-gray-900 w-full max-w-3xl rounded-sm shadow-2xl relative overflow-hidden flex flex-col max-h-[85vh] border border-white/10">
             <div className="absolute inset-0 z-0 pointer-events-none">{selectedEvent.Poster && (<><img src={getImageUrl(selectedEvent.Poster)} className="w-full h-full object-cover blur-xl opacity-30 scale-110" alt="bg" /><div className="absolute inset-0 bg-gradient-to-b from-gray-900 via-gray-900/90 to-gray-900"></div></>)}</div>
             <div className="p-6 relative z-10 flex-shrink-0 border-b border-white/10 bg-black/20 backdrop-blur-md">
               <button onClick={() => setTeamModalOpen(false)} className="absolute top-4 right-4 text-white/50 hover:text-white font-bold text-xl">✕</button>
@@ -1588,13 +2145,13 @@ function App() {
       )}
 
       {/* ADMIN LOGIN MODAL (RESTORED) */}
-      {showLoginModal && (
+      {showAdminLogin && (
           <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4 animate-fade-in">
               <div className="bg-white p-8 max-w-sm w-full rounded-sm shadow-2xl relative">
                   
                   {/* Close Button */}
                   <button 
-                      onClick={() => setShowLoginModal(false)} 
+                      onClick={() => setShowAdminLogin(false)} 
                       className="absolute top-2 right-4 text-gray-400 font-bold hover:text-red-500 text-xl"
                   >
                       ✕
@@ -1603,36 +2160,57 @@ function App() {
                   <h2 className="text-xl font-bold text-ministry-blue mb-4 border-b border-gray-100 pb-2">Admin Access</h2>
                   
                   {/* Form Update: No arguments needed, just the function name */}
-                  <form onSubmit={handleAdminLogin}>
-                      <div className="mb-4">
-                          <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Email / Username</label>
-                          <input 
-                              name="email" 
-                              type="text" 
-                              required 
-                              className="w-full p-3 border border-gray-300 focus:border-ministry-gold outline-none text-sm rounded-sm" 
-                              placeholder="admin@example.com"
-                          />
+                  <form onSubmit={handleAdminLogin} className="space-y-4">
+                  
+                  {/* 1. ROLE SELECTOR (New) */}
+                  <div>
+                      <label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Select Access Level</label>
+                      <div className="relative">
+                          <select
+                              value={adminFormData.selectedRole}
+                              onChange={(e) => setAdminFormData({...adminFormData, selectedRole: e.target.value})}
+                              className="w-full p-3 border border-gray-300 focus:border-ministry-gold outline-none text-sm rounded-sm appearance-none bg-white cursor-pointer"
+                          >
+                              <option value="staff">Staff / Gatekeeper</option>
+                              <option value="super_admin">Super Admin</option>
+                          </select>
+                          {/* Custom Arrow Icon for style */}
+                          <div className="absolute inset-y-0 right-0 flex items-center px-3 pointer-events-none text-gray-500">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+                          </div>
                       </div>
-                      <div className="mb-6">
-                          <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Password</label>
-                          <input 
-                              name="password" 
-                              type="password" 
-                              required 
-                              className="w-full p-3 border border-gray-300 focus:border-ministry-gold outline-none text-sm rounded-sm" 
-                              placeholder="••••••"
-                          />
-                      </div>
-                      
-                      {/* Submit Button */}
-                      <button 
-                          type="submit" 
-                          className="w-full bg-ministry-blue text-white py-3 font-bold uppercase text-xs tracking-widest hover:bg-ministry-gold transition shadow-lg"
-                      >
-                          Login
-                      </button>
-                  </form>
+                  </div>
+
+                  {/* 2. USERNAME INPUT */}
+                  <div>
+                      <label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Username or Email</label>
+                      <input 
+                          type="text" 
+                          placeholder="Enter ID" 
+                          className="w-full p-3 border border-gray-300 focus:border-ministry-gold outline-none text-sm rounded-sm"
+                          value={adminFormData.username}
+                          onChange={(e) => setAdminFormData({...adminFormData, username: e.target.value})}
+                          required 
+                      />
+                  </div>
+                  
+                  {/* 3. PASSWORD INPUT */}
+                  <div>
+                      <label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Password</label>
+                      <input 
+                          type="password" 
+                          placeholder="••••••••" 
+                          className="w-full p-3 border border-gray-300 focus:border-ministry-gold outline-none text-sm rounded-sm"
+                          value={adminFormData.password}
+                          onChange={(e) => setAdminFormData({...adminFormData, password: e.target.value})}
+                          required 
+                      />
+                  </div>
+
+                  <button className="w-full bg-ministry-blue text-white py-3 font-bold uppercase tracking-widest hover:bg-ministry-gold transition shadow-lg text-xs rounded-sm">
+                      Authenticate
+                  </button>
+              </form>
               </div>
           </div>
       )}
