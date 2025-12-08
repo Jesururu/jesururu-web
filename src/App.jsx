@@ -568,35 +568,42 @@ function App() {
           const user = res.data.user;
           const token = res.data.jwt;
 
-          // 1. DETERMINE ACTUAL PERMISSION LEVEL
-          // We check the hardcoded list to see what they are TRULY allowed to do
+          // === DEBUGGING: See exactly what Strapi returned ===
+          // If this alert pops up, check if the email matches your list EXACTLY.
+          console.log("Strapi Email:", user.email);
+          console.log("Allowed List:", SUPER_ADMINS);
+
+          // 1. DETERMINE PERMISSION (Case Insensitive Fix)
           const safeAdminList = (typeof SUPER_ADMINS !== 'undefined') ? SUPER_ADMINS : [];
-          const actualPrivilege = safeAdminList.includes(user.email) ? 'super_admin' : 'staff';
+          
+          // Normalize both to lowercase to prevent "Jude" vs "jude" errors
+          const isSuperAdmin = safeAdminList.some(adminEmail => 
+              adminEmail.toLowerCase() === user.email.toLowerCase()
+          );
+
+          const actualPrivilege = isSuperAdmin ? 'super_admin' : 'staff';
 
           // 2. VALIDATE SELECTION
-          // If they selected "Super Admin" but the system says they are just "Staff", BLOCK THEM.
           if (adminFormData.selectedRole === 'super_admin' && actualPrivilege !== 'super_admin') {
-              alert("ACCESS DENIED: You are not authorized to login as Super Admin.");
-              return; // Stop here. Do not let them in.
+              // Detailed Error Message to help you debug
+              alert(`ACCESS DENIED.\n\nYou tried to login as Super Admin, but the system sees you as 'Staff'.\n\nYour Email: ${user.email}\nAllowed Admins: ${safeAdminList.join(", ")}\n\nPlease add this exact email to your SUPER_ADMINS list in App.jsx and PUSH to GitHub.`);
+              return; 
           }
-
-          console.log("Login Authorized:", actualPrivilege);
 
           setAdminUser({
               username: user.username,
               email: user.email,
               token: token,
-              role: adminFormData.selectedRole // Use the role they selected (since we verified it)
+              role: adminFormData.selectedRole 
           });
 
-          // Route them to the correct tab based on role
           setAdminFormData({ 
               ...adminFormData, 
               activeTab: adminFormData.selectedRole === 'super_admin' ? 'team' : 'gatekeeper' 
           });
 
-          setShowAdminLogin(false); // Close modal
-          setShowAdminDashboard(true); // Open dashboard
+          setShowAdminLogin(false);
+          setShowAdminDashboard(true);
 
       } catch (error) {
           console.error("Login Error:", error);
@@ -1451,35 +1458,30 @@ function App() {
       {/* HERO SECTION (Dimmed Background for Maximum Readability) */}
       {/* HERO SECTION (Grayscale 'Noir' Edition) */}
       {/* HERO SECTION (High-Contrast Grayscale - Sharper Images) */}
+      {/* HERO SECTION (Bold White Text + Gold Highlights) */}
       <header id="home" className="relative min-h-screen flex items-center justify-center overflow-hidden pt-24 pb-12 bg-black">
         
-        {/* === BACKGROUND TRIPTYCH (Brighter & Sharper) === */}
+        {/* === BACKGROUND TRIPTYCH (Grayscale & Sharp) === */}
         <div className="absolute inset-0 z-0 grid grid-cols-1 md:grid-cols-3 gap-1 md:gap-0 pointer-events-none">
             
             {/* PANEL 1 (Left) */}
             <div className="relative hidden md:block h-full overflow-hidden border-r border-white/10">
                 {heroImages.map((img, index) => (
                     <div key={index} className={`absolute inset-0 transition-all duration-[2000ms] ease-in-out ${index === heroIndex1 ? 'opacity-80 scale-110' : 'opacity-0 scale-100'}`}>
-                        {/* High Contrast + Grayscale = "Sharp" Look */}
                         <img src={img} alt="" className="w-full h-full object-cover grayscale contrast-125" />
                     </div>
                 ))}
-                {/* Lighter Overlay (Was 80%, now 50%) */}
                 <div className="absolute inset-0 bg-black/50"></div>
             </div>
 
-            {/* PANEL 2 (Center - The Focus) */}
+            {/* PANEL 2 (Center) */}
             <div className="relative h-full overflow-hidden">
                 {heroImages.map((img, index) => (
                     <div key={index} className={`absolute inset-0 transition-all duration-[2000ms] ease-in-out ${index === heroIndex2 ? 'opacity-100 scale-100' : 'opacity-0 scale-105'}`}>
                         <img src={img} alt="" className="w-full h-full object-cover grayscale contrast-110" />
                     </div>
                 ))}
-                
-                {/* Very Light Overlay (Was 60%, now 30%) 
-                    We rely on the "text-shadow" to keep text readable now.
-                */}
-                <div className="absolute inset-0 bg-black/30 backdrop-blur-[0px]"></div>
+                <div className="absolute inset-0 bg-black/30"></div>
             </div>
 
             {/* PANEL 3 (Right) */}
@@ -1489,7 +1491,6 @@ function App() {
                         <img src={img} alt="" className="w-full h-full object-cover grayscale contrast-125" />
                     </div>
                 ))}
-                {/* Lighter Overlay (Was 80%, now 50%) */}
                 <div className="absolute inset-0 bg-black/50"></div>
             </div>
         </div>
@@ -1499,7 +1500,6 @@ function App() {
             
             {/* 1. Identity Tag */}
             <div className="inline-flex items-center gap-3 border-b border-ministry-gold/60 pb-3 mb-6 animate-fade-in-up">
-                {/* Added 'drop-shadow-md' to ensure small text is readable on lighter background */}
                 <span className="text-ministry-gold font-bold tracking-[0.3em] uppercase text-[10px] md:text-xs drop-shadow-md">
                     Official Ministry Portfolio
                 </span>
@@ -1508,7 +1508,6 @@ function App() {
             </div>
 
             {/* 2. Headline */}
-            {/* Increased drop-shadow to '2xl' and added a text-shadow class via style for safety */}
             <h1 className="text-5xl md:text-8xl font-serif font-bold text-white leading-[0.9] mb-6 drop-shadow-[0_5px_5px_rgba(0,0,0,0.8)] animate-fade-in-up delay-100">
               Jude <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#BF953F] via-[#FCF6BA] to-[#B38728] drop-shadow-sm">Jesururu</span>
             </h1>
@@ -1521,10 +1520,13 @@ function App() {
                 <span>Speaker</span>
             </div>
 
-            {/* 4. The Mandate */}
-            {/* Changed text color from gray-200 to white/90 for better visibility */}
-            <p className="text-sm md:text-xl text-white/90 mb-8 max-w-xl leading-relaxed drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] font-light animate-fade-in-up delay-300">
-              "My mandate is simple: To bridge the gap between <strong className="text-white font-bold">Faith</strong> and <strong className="text-white font-bold">Excellence</strong> through creative expression and Kingdom truths."
+            {/* 4. The Mandate (UPDATED) */}
+            {/* - Changed font-light -> font-bold 
+                - Changed text-white/90 -> text-white
+                - Changed Faith/Excellence color -> text-[#F3C657] (Bright Gold)
+            */}
+            <p className="text-sm md:text-xl text-white mb-8 max-w-xl leading-relaxed drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] font-bold animate-fade-in-up delay-300 tracking-wide">
+              "My mandate is simple: To bridge the gap between <span className="text-[#F3C657] font-black uppercase">Faith</span> and <span className="text-[#F3C657] font-black uppercase">Excellence</span> through creative expression and Kingdom truths."
             </p>
 
             {/* 5. Buttons */}
@@ -1532,7 +1534,6 @@ function App() {
               <button onClick={() => setShowModal(true)} className="bg-ministry-gold text-ministry-blue px-8 py-4 font-bold tracking-widest uppercase hover:bg-white hover:scale-105 transition-all duration-300 shadow-[0_0_30px_rgba(191,149,63,0.4)] rounded-sm text-xs border border-ministry-gold">
                 Invite Jude
               </button>
-              {/* Added bg-black/30 to the transparent button so it's readable over any image */}
               <button onClick={() => scrollToSection('books')} className="border border-white/40 bg-black/20 text-white px-8 py-4 font-bold tracking-widest uppercase hover:bg-white hover:text-ministry-blue transition-all duration-300 rounded-sm text-xs backdrop-blur-sm">
                 View Resources
               </button>
