@@ -557,7 +557,15 @@ function App() {
   const handleAdminLogin = async (e) => {
       e.preventDefault();
       
-      console.log(`Attempting login as [${adminFormData.selectedRole}]...`); 
+      // 1. DEBUG: Check what we are actually sending
+      console.log("--- DEBUG LOGIN START ---");
+      console.log("Username/Email Typed:", adminFormData.username);
+      console.log("Password Typed:", adminFormData.password ? "****** (Exists)" : "(Empty!)");
+      
+      if (!adminFormData.username || !adminFormData.password) {
+          alert("Error: Username or Password field is empty. The form state is not updating.");
+          return;
+      }
 
       try {
           const res = await axios.post(`${STRAPI_URL}/api/auth/local`, {
@@ -565,28 +573,22 @@ function App() {
               password: adminFormData.password
           });
 
+          // If we get here, login worked!
           const user = res.data.user;
           const token = res.data.jwt;
 
-          // === DEBUGGING: See exactly what Strapi returned ===
-          // If this alert pops up, check if the email matches your list EXACTLY.
-          console.log("Strapi Email:", user.email);
-          console.log("Allowed List:", SUPER_ADMINS);
+          console.log("Strapi Login Success! Email:", user.email);
+          console.log("Checking against Super Admin List:", SUPER_ADMINS);
 
-          // 1. DETERMINE PERMISSION (Case Insensitive Fix)
+          // ... (Rest of your role logic) ...
           const safeAdminList = (typeof SUPER_ADMINS !== 'undefined') ? SUPER_ADMINS : [];
-          
-          // Normalize both to lowercase to prevent "Jude" vs "jude" errors
           const isSuperAdmin = safeAdminList.some(adminEmail => 
               adminEmail.toLowerCase() === user.email.toLowerCase()
           );
-
           const actualPrivilege = isSuperAdmin ? 'super_admin' : 'staff';
 
-          // 2. VALIDATE SELECTION
           if (adminFormData.selectedRole === 'super_admin' && actualPrivilege !== 'super_admin') {
-              // Detailed Error Message to help you debug
-              alert(`ACCESS DENIED.\n\nYou tried to login as Super Admin, but the system sees you as 'Staff'.\n\nYour Email: ${user.email}\nAllowed Admins: ${safeAdminList.join(", ")}\n\nPlease add this exact email to your SUPER_ADMINS list in App.jsx and PUSH to GitHub.`);
+              alert(`ACCESS DENIED. You are Staff, not Super Admin.\nEmail: ${user.email}`);
               return; 
           }
 
@@ -606,9 +608,23 @@ function App() {
           setShowAdminDashboard(true);
 
       } catch (error) {
-          console.error("Login Error:", error);
-          const msg = error.response?.data?.error?.message || "Invalid Credentials";
-          alert(`Login Failed: ${msg}`);
+          console.error("LOGIN FAILED:", error);
+          
+          if (error.response) {
+              // 2. DEBUG: Read the specific rejection reason from Strapi
+              const errorName = error.response.data?.error?.name; 
+              const errorMessage = error.response.data?.error?.message;
+              
+              console.log("Server Reason:", errorMessage);
+              
+              if (errorMessage === "Invalid identifier or password") {
+                 alert("LOGIN FAILED: Incorrect Username or Password.\n\nNOTE: Did you create this user on the LIVE Render database? Users created on localhost do not exist on the cloud automatically.");
+              } else {
+                 alert(`Server Error (${error.response.status}): ${errorMessage}`);
+              }
+          } else {
+              alert("Network Error: Unable to reach the API.");
+          }
       }
   };
 
