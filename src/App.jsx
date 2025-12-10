@@ -5,6 +5,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { Scanner } from '@yudiel/react-qr-scanner';
 import AudioPlayer from 'react-h5-audio-player';
+import ReactPlayer from 'react-player';
 import 'react-h5-audio-player/lib/styles.css';
 import './App.css';
 
@@ -321,6 +322,22 @@ function App() {
     ];
 
     // --- EFFECTS ---
+    // --- ROBUST SCROLL LOCK ---
+    useEffect(() => {
+        if (isVideoPlaying) {
+            // Lock position
+            document.body.style.position = 'fixed';
+            document.body.style.top = `-${window.scrollY}px`;
+            document.body.style.width = '100%';
+        } else {
+            // Unlock and restore position
+            const scrollY = document.body.style.top;
+            document.body.style.position = '';
+            document.body.style.top = '';
+            document.body.style.width = '';
+            window.scrollTo(0, parseInt(scrollY || '0') * -1);
+        }
+    }, [isVideoPlaying]);
     useEffect(() => {
         const timer1 = setInterval(() => setHeroIndex1((prev) => (prev + 1) % heroImages.length), 5000);
         return () => clearInterval(timer1);
@@ -411,24 +428,57 @@ function App() {
                 const flattened = regRes.data.data.map(item => ({ id: item.id, ...(item.attributes || item) }));
                 setAllRegistrations(flattened);
 
+                // REPLACE THE PREVIOUS 'Process Videos' BLOCK WITH THIS:
+
                 // Process Videos
                 const rawVideos = videosRes.data.data || [];
                 const fetchedVideos = rawVideos.map(item => {
                     const attrs = item.attributes || item;
+                    
+                    // ROBUST URL GETTER (Handles Strapi v4 & v5)
                     const getUrl = (mediaField) => {
-                        if (!mediaField?.data) return "";
-                        const url = mediaField.data.attributes.url;
+                        if (!mediaField) return null;
+                        
+                        // Case A: It's inside 'data' (Standard v4)
+                        let data = mediaField.data || mediaField;
+                        if (Array.isArray(data)) data = data[0];
+                        if (!data) return null;
+
+                        // Case B: It has 'attributes' (Standard v4) or direct properties (v5)
+                        const url = data.attributes?.url || data.url;
+                        
+                        if (!url) return null;
                         return url.startsWith('http') ? url : `${STRAPI_URL}${url}`;
                     };
+
+                    // SOURCE DETECTION
+                    let finalSource = "";
+                    
+                    // Get the link (checking all spellings)
+                    let ytLink = attrs.YouTubeLink || attrs.youTubeLink || attrs.youtubeLink; 
+
+                    if (ytLink && ytLink.length > 5) {
+                        // CLEANUP: Remove the "?si=..." tracking junk if it's a short link
+                        if (ytLink.includes('youtu.be')) {
+                            // This splits at the '?' and takes ONLY the first part
+                            finalSource = ytLink.split('?')[0]; 
+                        }
+                        finalSource = ytLink; 
+                    } else {
+                        finalSource = getUrl(attrs.VideoFile); 
+                    }
+
                     return {
                         id: item.id,
                         title: attrs.Title || "Untitled Video",
                         desc: attrs.Description || "",
                         duration: attrs.Duration || "00:00",
-                        thumbnail: getUrl(attrs.Thumbnail) || "/images/placeholder.jpg",
-                        videoSrc: getUrl(attrs.VideoFile)
+                        // Fallback to placeholder only if getUrl returns null
+                        thumbnail: getUrl(attrs.Thumbnail) || "/images/placeholder.jpg", 
+                        videoSrc: finalSource
                     };
                 });
+
                 if (fetchedVideos.length > 0) setVideoPlaylist(fetchedVideos);
                 else setVideoPlaylist([{ id: 1, title: "Coming Soon", desc: "Stay tuned.", duration: "00:00", thumbnail: "", videoSrc: "" }]);
 
@@ -737,12 +787,11 @@ function App() {
             </div>
         );
     }
-
     return (
         <div className="w-full overflow-x-hidden font-sans text-gray-800">
             <GlobalStyles />
             {/* NAVBAR */}
-            <nav className="fixed w-full z-50 bg-[#0B1120]/95 backdrop-blur-md shadow-lg border-b border-white/10">
+            <nav className="fixed w-full z-40 bg-[#0B1120]/95 backdrop-blur-md shadow-lg border-b border-white/10">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                     <div className="flex justify-between items-center h-20">
                         <div className="flex-shrink-0 cursor-pointer group" onClick={() => scrollToSection('home')}>
@@ -839,7 +888,7 @@ function App() {
                     </div>
                     {videoPlaylist.length > 0 && (
                         <>
-                            <div className="relative w-full aspect-video bg-black border border-white/10 rounded-sm shadow-2xl overflow-hidden mb-8 group">
+                            <div className="relative w-full h-[300px] md:h-[500px] bg-black border border-white/10 rounded-sm shadow-2xl overflow-hidden mb-8 group">
                                 {!isVideoPlaying && (
                                     <div className="absolute inset-0 z-20 flex items-center justify-center bg-black">
                                         <img src={videoPlaylist[currentVideoIndex]?.thumbnail} alt="Cover" className="absolute inset-0 w-full h-full object-cover opacity-60 group-hover:opacity-50 transition-all duration-700 group-hover:scale-105" />
@@ -847,7 +896,6 @@ function App() {
                                         <div className="absolute bottom-0 left-0 w-full bg-gradient-to-t from-black via-black/60 to-transparent p-6 text-left"><h3 className="text-xl md:text-3xl font-bold text-white mb-2 font-serif">{videoPlaylist[currentVideoIndex]?.title}</h3><p className="text-gray-300 text-sm max-w-lg line-clamp-1">{videoPlaylist[currentVideoIndex]?.desc}</p></div>
                                     </div>
                                 )}
-                                {isVideoPlaying && (<video className="w-full h-full object-cover" controls autoPlay src={videoPlaylist[currentVideoIndex]?.videoSrc}>Your browser does not support the video tag.</video>)}
                             </div>
                             <div className="relative group/slider">
                                 <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4 px-1">Up Next</h3>
@@ -975,13 +1023,13 @@ function App() {
                     <p className="text-gray-400 text-sm mb-6">© {new Date().getFullYear()} All Rights Reserved.</p>
                     <div className="mt-8">
                         {isAuthorizedDevice ? (
-                            <button onClick={() => setShowAdminLogin(true)} className="text-[10px] text-green-600 font-bold hover:text-white transition border border-green-600 px-3 py-1 rounded">
+                            <button 
+                                onClick={() => setShowAdminLogin(true)} 
+                                className="text-[10px] font-bold uppercase tracking-widest text-ministry-gold border border-ministry-gold/50 px-4 py-2 rounded-sm hover:bg-ministry-gold hover:text-[#0B1120] transition-all duration-300 opacity-80 hover:opacity-100"
+                            >
                                 Admin Portal Access
                             </button>
-                        ) : (
-                            // Optional: Keep it invisible, or show nothing
-                            null 
-                        )}
+                        ) : null}
                     </div>
                 </div>
             </footer>
@@ -1181,6 +1229,60 @@ function App() {
                         </div>
 
                         <button onClick={() => setShowDeviceIDModal(false)} className="w-full bg-black text-white py-3 rounded-sm text-xs uppercase font-bold tracking-widest hover:bg-gray-800">Close</button>
+                    </div>
+                </div>
+            )}
+
+            {isVideoPlaying && (
+                <div className="fixed inset-0 z-[99999] bg-black flex items-center justify-center p-4 md:p-20 overscroll-none touch-none" onClick={(e) => e.stopPropagation()} >
+                                        
+                    {/* Close Button */}
+                    <button 
+                        onClick={(e) => { e.stopPropagation(); setIsVideoPlaying(false); }}
+                        className="absolute top-6 right-6 text-white bg-red-600 rounded-full w-12 h-12 flex items-center justify-center shadow-lg hover:scale-110 transition z-[10000] font-bold text-xl"
+                    >
+                        ✕
+                    </button>
+
+                    <div className="w-full h-full border-4 border-ministry-gold relative bg-black">
+                        {(() => {
+                            // 1. Get the current video URL
+                            // (REVERTED BACK to dynamic variable so it plays your playlist, not the Bunny)
+                            const source = videoPlaylist[currentVideoIndex]?.videoSrc || "";
+                                                
+                            // 2. Check if it is YouTube
+                            const isYouTube = source.includes('youtube.com') || source.includes('youtu.be');
+
+                            if (isYouTube) {
+                                // Extract Video ID for Embed
+                                let videoId = "";
+                                if (source.includes('v=')) videoId = source.split('v=')[1]?.split('&')[0];
+                                else if (source.includes('youtu.be/')) videoId = source.split('youtu.be/')[1]?.split('?')[0];
+
+                                return (
+                                    <iframe
+                                        className="w-full h-full"
+                                        src={`https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0`}
+                                        title="YouTube video player"
+                                        frameBorder="0"
+                                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                        allowFullScreen
+                                    ></iframe>
+                                );
+                            } else {
+                                // 3. Fallback to Native Player for Uploads (The "Bunny" Player)
+                                return (
+                                    <video 
+                                        src={source}
+                                        className="w-full h-full object-contain"
+                                        controls 
+                                        autoPlay
+                                    >
+                                        Your browser does not support the video tag.
+                                    </video>
+                                );
+                            }
+                        })()}
                     </div>
                 </div>
             )}
