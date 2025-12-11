@@ -19,6 +19,11 @@ import './App.css';
 // =========================================
 function App() {
     // --- STATE ---
+    // --- USER AUTH STATE ---
+    const [currentUser, setCurrentUser] = useState(null); // Stores user data (id, username, email)
+    const [showAuthModal, setShowAuthModal] = useState(false); // Opens Login/Signup box
+    const [authMode, setAuthMode] = useState('login'); // 'login' or 'register'
+
     const [loading, setLoading] = useState(true);
     const [quotes, setQuotes] = useState([]);
     const [books, setBooks] = useState([]);
@@ -27,6 +32,9 @@ function App() {
     const [events, setEvents] = useState([]);
     const [allRegistrations, setAllRegistrations] = useState([]);
     const [currentSong, setCurrentSong] = useState(null);
+    // --- QUIZ STATE ---
+    const [quizSelected, setQuizSelected] = useState(null); // 'A', 'B', or 'C'
+    const [quizStatus, setQuizStatus] = useState('idle'); // 'idle', 'correct', 'wrong'
     // --- DEVOTIONAL STATE ---
     const [devotionals, setDevotionals] = useState([]);
     const [activeDevoIndex, setActiveDevoIndex] = useState(0);
@@ -107,6 +115,11 @@ function App() {
     ];
 
     // --- EFFECTS ---
+    // Reset quiz when changing devotionals
+    useEffect(() => {
+        setQuizSelected(null);
+        setQuizStatus('idle');
+    }, [activeDevoIndex]);
     // --- DEEP LINKING (Open Shared Devotionals) ---
     useEffect(() => {
         if (devotionals.length > 0) {
@@ -225,7 +238,15 @@ function App() {
                         date: attrs.Date || "No Date",
                         category: attrs.Category || "General",
                         verse: attrs.Scripture || "",
-                        text: attrs.Body || ""
+                        text: attrs.Body || "",
+                        biblePlan: attrs.BiblePlan || "",
+                        bibleDay: attrs.BibleDay || null,
+                        assignment: attrs.Assignment || "",
+                        quiz: {
+                            question: attrs.QuizQuestion || "",
+                            options: [attrs.QuizOptionA, attrs.QuizOptionB, attrs.QuizOptionC].filter(Boolean), // Only show existing options
+                            correct: attrs.CorrectOption || "" // "A", "B", or "C"
+                        }
                     };
                 });
                 setDevotionals(processedDevos);
@@ -384,6 +405,77 @@ function App() {
     const startEditing = (quote) => { setEditingQuote(quote); const text = quote.Text || quote.text || ""; setQuoteFormText(text); setTimeout(() => { if (document.getElementsByName('quoteText')[0]) { document.getElementsByName('quoteText')[0].value = text; document.getElementsByName('quoteHighlight')[0].value = quote.Highlight || quote.highlight || ""; } }, 50); };
     const cancelEditing = () => { setEditingQuote(null); setQuoteFormText(""); const form = document.querySelector('form[name="quoteForm"]'); if (form) form.reset(); };
 
+    // --- AUTHENTICATION HANDLERS ---
+    
+    // 1. REGISTER
+    const handleRegister = async (e) => {
+        e.preventDefault();
+        const username = e.target.username.value;
+        const email = e.target.email.value;
+        const password = e.target.password.value;
+
+        try {
+            const response = await axios.post(`${STRAPI_URL}/api/auth/local/register`, {
+                username,
+                email,
+                password,
+            });
+            
+            // Auto-login after register
+            const { user, jwt } = response.data;
+            loginUser(user, jwt);
+            alert(`Welcome to the family, ${user.username}!`);
+            setShowAuthModal(false);
+        } catch (error) {
+            console.error(error);
+            alert("Registration failed. Email might be taken.");
+        }
+    };
+
+    // 2. LOGIN
+    const handleLogin = async (e) => {
+        e.preventDefault();
+        const identifier = e.target.identifier.value; // email or username
+        const password = e.target.password.value;
+
+        try {
+            const response = await axios.post(`${STRAPI_URL}/api/auth/local`, {
+                identifier,
+                password,
+            });
+
+            const { user, jwt } = response.data;
+            loginUser(user, jwt);
+            setShowAuthModal(false);
+        } catch (error) {
+            console.error(error);
+            alert("Invalid email or password.");
+        }
+    };
+
+    // 3. LOGOUT
+    const handleLogout = () => {
+        setCurrentUser(null);
+        localStorage.removeItem('user_token');
+        localStorage.removeItem('user_data');
+        window.location.reload(); // Refresh to clear states
+    };
+
+    // Helper to save session
+    const loginUser = (user, token) => {
+        setCurrentUser(user);
+        localStorage.setItem('user_token', token);
+        localStorage.setItem('user_data', JSON.stringify(user));
+    };
+
+    // Check if user is already logged in when app loads
+    useEffect(() => {
+        const token = localStorage.getItem('user_token');
+        const userData = localStorage.getItem('user_data');
+        if (token && userData) {
+            setCurrentUser(JSON.parse(userData));
+        }
+    }, []);
     const handleAdminLogin = async (e) => {
         e.preventDefault();
         if (!adminFormData.username || !adminFormData.password) { alert("Error: Username or Password field is empty."); return; }
@@ -402,7 +494,7 @@ function App() {
     const handleAddMinister = async (e) => {
         e.preventDefault(); if (!adminUser) return alert("You must be logged in.");
         let photoId = null;
-        if (adminFormData.ministerPhoto) { try { const uploadData = new FormData(); uploadData.append('files', adminFormData.ministerPhoto); const uploadRes = await axios.post(`${STRAPI_URL}/api/upload`, uploadData, { headers: { 'Authorization': `Bearer ${adminUser.token}` } }); photoId = uploadRes.data[0].id; } catch (uploadError) { alert(`Image Upload Failed.`); return; } }
+        if (adminFormData.ministerPhoto) { try { const uploadData = new FormData(); uploadData.append('files', adminFormData.ministerPhoto); const uploadRes = await axios.post(`${STRAPI_URL}/api/upload`, uploadData, { headers: { 'Authorization': `Bearer ${adminUser.token}` } }); photoId = uploadRes.data[0].id; } catch (uploadError) { console.log(uploadError); alert(`Image Upload Failed.`); return; } }
         try {
             const collection = adminFormData.targetType === 'book' ? 'books' : 'events'; const fieldName = adminFormData.targetType === 'book' ? 'TheTeam' : 'Team';
             const getRes = await axios.get(`${STRAPI_URL}/api/${collection}/${adminFormData.targetId}?populate[${fieldName}][populate]=*`);
@@ -430,6 +522,27 @@ function App() {
     const scrollToSection = (id) => { setMobileMenuOpen(false); const element = document.getElementById(id); if (element) element.scrollIntoView({ behavior: 'smooth' }); };
     const startScrolling = (direction) => { if (scrollInterval.current) clearInterval(scrollInterval.current); scrollInterval.current = setInterval(() => { if (bookScrollRef.current) { bookScrollRef.current.scrollLeft += (direction === 'left' ? -10 : 10); } }, 10); };
     const stopScrolling = () => { if (scrollInterval.current) { clearInterval(scrollInterval.current); scrollInterval.current = null; } };
+
+    // --- INSIGHT HANDLER ---
+    const handleSendInsight = async (msg) => {
+        if (!currentUser) {
+            alert("Please login to send insights to Jude.");
+            setShowAuthModal(true);
+            return;
+        }
+
+        try {
+            await axios.post(`${STRAPI_URL}/api/reflections`, {
+                data: {
+                    Content: msg,
+                    DevotionalTitle: devotionals[activeDevoIndex].title,
+                    ReaderName: currentUser.username, // <--- AUTOMATIC NAME
+                    Email: currentUser.email // <--- AUTOMATIC EMAIL
+                }
+            });
+            alert("Sent successfully! Jude will see this.");
+        } catch (error) { console.log(error); }
+    };
 
     // =========================================
     // HANDLE NEWSLETTER SUBSCRIPTION
@@ -508,7 +621,15 @@ function App() {
             Category: form.category.value,
             Scripture: form.scripture.value,
             Date: form.date.value,
-            Body: form.body.value
+            Body: form.body.value,
+            BiblePlan: form.biblePlan.value,
+            BibleDay: form.bibleDay.value,
+            Assignment: form.assignment.value,
+            QuizQuestion: form.quizQuestion.value,
+            QuizOptionA: form.quizA.value,
+            QuizOptionB: form.quizB.value,
+            QuizOptionC: form.quizC.value,
+            CorrectOption: form.correctOption.value
         };
 
         if (!adminUser || !adminUser.token) return alert("Session expired. Please login again.");
@@ -780,8 +901,11 @@ function App() {
                                             <label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Scripture Reference</label>
                                             <input name="scripture" type="text" placeholder="e.g. Hebrews 11:1" required className="w-full p-3 border border-gray-300 focus:border-ministry-gold outline-none text-sm rounded-sm" />
                                         </div>
+                                        <div>
+                                            <label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Bible In One Year</label>
+                                            <input name="biblePlan" type="text" placeholder="Gen 1-3, Matt 1" className="w-full p-3 border border-gray-300 focus:border-ministry-gold outline-none text-sm rounded-sm" />
+                                        </div>
                                     </div>
-
                                     {/* The Body */}
                                     <div>
                                         <label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Message Body</label>
@@ -794,7 +918,41 @@ function App() {
                                         ></textarea>
                                         <p className="text-[10px] text-gray-400 mt-1">* Tips: Use double 'Enter' for new paragraphs.</p>
                                     </div>
+                                    {/* --- QUIZ SECTION --- */}
+                                    <div className="bg-gray-50 p-4 rounded border border-gray-200 mt-4">
+                                        <h4 className="text-[10px] font-bold uppercase text-gray-500 mb-3 border-b border-gray-200 pb-1">Engagement (Optional)</h4>
+                                        
+                                        <div className="grid grid-cols-2 gap-4 mb-4">
+                                            <div>
+                                                <label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Day Number</label>
+                                                <input name="bibleDay" type="number" placeholder="e.g. 245" className="w-full p-2 text-sm border border-gray-300 rounded-sm" />
+                                            </div>
+                                            <div>
+                                                <label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Assignment</label>
+                                                <input name="assignment" type="text" placeholder="e.g. Call a friend..." className="w-full p-2 text-sm border border-gray-300 rounded-sm" />
+                                            </div>
+                                        </div>
 
+                                        <div>
+                                            <label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Quiz Question</label>
+                                            <input name="quizQuestion" type="text" placeholder="Question..." className="w-full p-2 text-sm border border-gray-300 rounded-sm mb-2" />
+                                            
+                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                                                <input name="quizA" type="text" placeholder="Option A" className="p-2 text-sm border border-gray-300 rounded-sm" />
+                                                <input name="quizB" type="text" placeholder="Option B" className="p-2 text-sm border border-gray-300 rounded-sm" />
+                                                <input name="quizC" type="text" placeholder="Option C" className="p-2 text-sm border border-gray-300 rounded-sm" />
+                                            </div>
+                                            
+                                            <div className="mt-2">
+                                                <label className="text-[10px] font-bold uppercase text-gray-400 mr-2">Correct Answer:</label>
+                                                <select name="correctOption" className="p-1 border border-gray-300 rounded-sm text-sm">
+                                                    <option value="A">Option A</option>
+                                                    <option value="B">Option B</option>
+                                                    <option value="C">Option C</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                    </div> 
                                     {/* Submit */}
                                     <button className="w-full bg-ministry-blue text-white py-4 font-bold uppercase tracking-widest hover:bg-ministry-gold hover:text-ministry-blue transition shadow-lg text-sm rounded-sm">
                                         Publish Entry
@@ -902,7 +1060,26 @@ function App() {
                                 <a href="https://instagram.com" target="_blank" rel="noreferrer" className="text-gray-400 hover:text-ministry-gold transition-colors"><svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/></svg></a>
                                 <a href="https://youtube.com" target="_blank" rel="noreferrer" className="text-gray-400 hover:text-red-600 transition-colors"><svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M19.615 3.184c-3.604-.246-11.631-.245-15.23 0-3.897.266-4.356 2.62-4.385 8.816.029 6.185.484 8.549 4.385 8.816 3.6.245 11.626.246 15.23 0 3.897-.266 4.356-2.62 4.385-8.816-.029-6.185-.484-8.549-4.385-8.816zm-10.615 12.816v-8l8 3.993-8 4.007z"/></svg></a>
                             </div>
-                            <button onClick={() => setShowModal(true)} className="bg-ministry-gold text-[#0B1120] px-5 py-2.5 rounded-sm font-bold uppercase text-[10px] tracking-widest hover:bg-white hover:text-[#0B1120] transition shadow-[0_0_15px_rgba(191,149,63,0.3)]">Invite</button>
+                            {currentUser ? (
+                                <div className="flex items-center gap-3">
+                                    <span className="text-gray-300 text-xs font-bold uppercase tracking-widest hidden md:block">
+                                        Hi, {currentUser.username}
+                                    </span>
+                                    <button 
+                                        onClick={handleLogout}
+                                        className="bg-white/10 border border-white/20 text-white px-4 py-2 rounded-sm text-[10px] font-bold uppercase tracking-widest hover:bg-red-600 hover:border-red-600 transition"
+                                    >
+                                        Logout
+                                    </button>
+                                </div>
+                            ) : (
+                                <button 
+                                    onClick={() => { setAuthMode('login'); setShowAuthModal(true); }}
+                                    className="bg-ministry-gold text-[#0B1120] px-5 py-2.5 rounded-sm font-bold uppercase text-[10px] tracking-widest hover:bg-white transition"
+                                >
+                                    Member Login
+                                </button>
+                            )}
                         </div>
                         <div className="md:hidden flex items-center"><button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="text-ministry-gold hover:text-white focus:outline-none"><svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">{mobileMenuOpen ? (<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />) : (<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />)}</svg></button></div>
                     </div>
@@ -936,7 +1113,31 @@ function App() {
                             <a href="#" className="text-gray-400 hover:text-ministry-gold"><svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/></svg></a>
                             <a href="#" className="text-gray-400 hover:text-red-600"><svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M19.615 3.184c-3.604-.246-11.631-.245-15.23 0-3.897.266-4.356 2.62-4.385 8.816.029 6.185.484 8.549 4.385 8.816 3.6.245 11.626.246 15.23 0 3.897-.266 4.356-2.62 4.385-8.816-.029-6.185-.484-8.549-4.385-8.816zm-10.615 12.816v-8l8 3.993-8 4.007z"/></svg></a>
                         </div>
-                        <button onClick={() => setShowModal(true)} className="w-full mt-2 bg-ministry-gold text-[#0B1120] py-3 font-bold uppercase tracking-widest hover:bg-white transition">Invite</button>
+                        {/* === MOBILE AUTH SECTION === */}
+                            {currentUser ? (
+                                // IF LOGGED IN: Show Name + Logout
+                                <div className="w-full pt-4 border-t border-white/10 mt-2 flex flex-col gap-3">
+                                    <div className="text-center">
+                                        <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Signed in as</span>
+                                        <p className="text-sm text-white font-bold font-serif">{currentUser.username}</p>
+                                    </div>
+                                    
+                                    <button 
+                                        onClick={() => { handleLogout(); setMobileMenuOpen(false); }}
+                                        className="w-full py-3 border border-red-900/50 text-red-500 font-bold uppercase text-xs tracking-widest hover:bg-red-600 hover:text-white transition rounded-sm"
+                                    >
+                                        Logout
+                                    </button>
+                                </div>
+                            ) : (
+                                // IF LOGGED OUT: Show Login Button
+                                <button 
+                                    onClick={() => { setAuthMode('login'); setShowAuthModal(true); setMobileMenuOpen(false); }} 
+                                    className="w-full mt-2 bg-ministry-gold text-[#0B1120] py-3 font-bold uppercase text-xs tracking-widest hover:bg-white transition rounded-sm shadow-[0_0_15px_rgba(191,149,63,0.2)]"
+                                >
+                                    Member Login
+                                </button>
+                            )}
                         </div>
                     </div>
                 )}
@@ -1144,12 +1345,147 @@ function App() {
                                         "{devotionals[activeDevoIndex].verse}"
                                     </div>
                                 )}
-
                                 {/* The Main Content */}
                                 <div className="prose prose-lg text-gray-600 leading-relaxed whitespace-pre-line mb-12 font-serif">
                                     {devotionals[activeDevoIndex].text}
                                 </div>
+                                {/* ================================================= */}
+                                {/* === DISCIPLESHIP ENGAGEMENT ZONE              === */}
+                                {/* ================================================= */}
+                                <div className="mt-12 space-y-8">
 
+                                    {/* 1. BIBLE READING PLAN (Updated with Day Count) */}
+                                    {devotionals[activeDevoIndex].biblePlan && (
+                                        <div className="bg-[#0B1120] rounded-sm overflow-hidden shadow-lg border border-gray-800">
+                                            <div className="bg-ministry-gold p-2 text-center">
+                                                <span className="text-ministry-blue font-bold uppercase text-[10px] tracking-widest">
+                                                    Bible In One Year • Day {devotionals[activeDevoIndex].bibleDay || '---'}
+                                                </span>
+                                            </div>
+                                            <div className="p-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+                                                <div className="flex items-center gap-3 text-white">
+                                                    <span className="text-2xl">📖</span>
+                                                    <span className="font-serif text-lg md:text-xl tracking-wide">
+                                                        {devotionals[activeDevoIndex].biblePlan}
+                                                    </span>
+                                                </div>
+                                                <a 
+                                                    href={`https://www.biblegateway.com/passage/?search=${devotionals[activeDevoIndex].biblePlan}&version=NKJV`} 
+                                                    target="_blank" 
+                                                    rel="noreferrer"
+                                                    className="px-6 py-2 border border-white/20 hover:bg-white hover:text-[#0B1120] text-white text-xs font-bold uppercase tracking-widest transition rounded-sm"
+                                                >
+                                                    Read Now
+                                                </a>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                                
+                                        {/* 2. ASSIGNMENT / CHALLENGE CARD */}
+                                        {devotionals[activeDevoIndex].assignment && (
+                                            <div className="bg-orange-50 border border-orange-100 p-6 rounded-sm relative overflow-hidden group">
+                                                <div className="absolute top-0 right-0 p-4 opacity-10 text-orange-500 text-6xl font-serif font-bold">!</div>
+                                                <span className="text-orange-600 text-[10px] font-bold uppercase tracking-widest block mb-2">Today's Assignment</span>
+                                                <h4 className="text-gray-800 font-bold font-serif text-lg mb-2">Faith in Action</h4>
+                                                <p className="text-gray-600 text-sm leading-relaxed relative z-10">
+                                                    {devotionals[activeDevoIndex].assignment}
+                                                </p>
+                                                <button 
+                                                    onClick={() => window.open(`https://wa.me/?text=My assignment for today: ${devotionals[activeDevoIndex].assignment}`, '_blank')}
+                                                    className="mt-4 text-[10px] font-bold uppercase text-orange-600 border-b border-orange-200 hover:text-orange-800 transition"
+                                                >
+                                                    Share Progress
+                                                </button>
+                                            </div>
+                                        )}
+
+                                        {/* 3. INTERACTIVE QUIZ CARD */}
+                                        {devotionals[activeDevoIndex].quiz.question && (
+                                            <div className="bg-blue-50 border border-blue-100 p-6 rounded-sm">
+                                                <span className="text-ministry-blue text-[10px] font-bold uppercase tracking-widest block mb-2">Quick Check</span>
+                                                <h4 className="text-gray-800 font-bold text-sm mb-4">
+                                                    {devotionals[activeDevoIndex].quiz.question}
+                                                </h4>
+
+                                                <div className="space-y-2">
+                                                    {['A', 'B', 'C'].map((opt, idx) => {
+                                                        const optionText = devotionals[activeDevoIndex].quiz.options[idx];
+                                                        if (!optionText) return null;
+
+                                                        let btnClass = "w-full text-left p-3 text-xs border rounded-sm transition flex justify-between items-center ";
+                                                                
+                                                        // Logic for styling based on answer status
+                                                        if (quizStatus === 'idle') {
+                                                            btnClass += quizSelected === opt ? "bg-ministry-blue text-white border-ministry-blue" : "bg-white border-gray-200 hover:border-ministry-blue text-gray-600";
+                                                        } else if (quizStatus === 'correct' && opt === devotionals[activeDevoIndex].quiz.correct) {
+                                                            btnClass += "bg-green-600 text-white border-green-600";
+                                                        } else if (quizStatus === 'wrong' && quizSelected === opt) {
+                                                            btnClass += "bg-red-500 text-white border-red-500";
+                                                        } else {
+                                                            btnClass += "bg-gray-100 text-gray-400 border-gray-100"; // Dim others
+                                                        }
+
+                                                        return (
+                                                            <button 
+                                                                key={opt}
+                                                                disabled={quizStatus !== 'idle'}
+                                                                onClick={() => {
+                                                                    setQuizSelected(opt);
+                                                                    if(opt === devotionals[activeDevoIndex].quiz.correct) {
+                                                                        setQuizStatus('correct');
+                                                                    } else {
+                                                                        setQuizStatus('wrong');
+                                                                        setTimeout(() => setQuizStatus('idle'), 1500); // Reset after 1.5s if wrong
+                                                                    }
+                                                                }}
+                                                                className={btnClass}
+                                                            >
+                                                                <span>{optionText}</span>
+                                                                {quizStatus === 'correct' && opt === devotionals[activeDevoIndex].quiz.correct && <span>✅</span>}
+                                                                {quizStatus === 'wrong' && quizSelected === opt && <span>❌</span>}
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                                {quizStatus === 'correct' && (
+                                                    <p className="text-green-600 text-[10px] font-bold uppercase mt-3 animate-pulse">That's Correct! Well done.</p>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                            
+                                    {/* 4. SHARE INSIGHT (Working Form) */}
+                                    <div className="pt-6 border-t border-gray-100">
+                                        <p className="text-xs text-gray-400 mb-2 font-bold uppercase tracking-widest">
+                                            Have a question or insight? Send it to Jude.
+                                        </p>
+                                        <form 
+                                            onSubmit={(e) => {
+                                                e.preventDefault();
+                                                handleSendInsight(e.target.elements.insight.value);
+                                                e.target.reset(); // Clear box after sending
+                                            }} 
+                                            className="flex gap-2"
+                                        >
+                                            <input 
+                                                name="insight"
+                                                type="text" 
+                                                required
+                                                placeholder="What did you learn today?" 
+                                                className="flex-1 bg-gray-50 border border-gray-200 p-3 text-sm rounded-sm focus:border-ministry-gold outline-none" 
+                                            />
+                                            <button 
+                                                type="submit"
+                                                className="bg-ministry-blue text-white px-6 text-xs font-bold uppercase tracking-widest rounded-sm hover:bg-ministry-gold hover:text-ministry-blue transition"
+                                            >
+                                                Send
+                                            </button>
+                                        </form>
+                                    </div>
+
+                                </div>
                                 {/* Action Area (Share & Copy) */}
                                 <div className="mt-auto pt-8 border-t border-gray-100 flex items-center justify-between">
                                     <div className="flex gap-4">
@@ -1380,6 +1716,39 @@ function App() {
                                         <select name="attendanceType" value={registrationData.attendanceType || 'Physical'} onChange={handleRegistrationInput} className="w-full p-3 bg-white/5 border border-white/20 rounded-sm text-white"><option value="Physical" className="text-black">Physically</option><option value="Virtual" className="text-black">Virtually</option></select>
                                         <input type="tel" name="phone" placeholder="e.g. +234 80 123 4567" required className="w-full p-3 bg-white/5 border border-white/20 rounded-sm text-white placeholder-white/30" value={registrationData.phone} onChange={(e) => setRegistrationData({ ...registrationData, phone: e.target.value })} />
                                         <div className="flex gap-4 mt-8"><button type="submit" disabled={isSubmitting} className={`flex-1 py-4 font-bold uppercase tracking-widest transition shadow-lg rounded-sm ${isSubmitting ? 'bg-gray-600 cursor-wait' : 'bg-ministry-gold text-ministry-blue hover:bg-white'}`}>{isSubmitting ? "Processing..." : "Generate Ticket"}</button><button type="button" onClick={() => { if (selectedEvent.isBook) { setEventModalOpen(false); } else { setIsRegistering(false); } }} className="px-6 py-4 border border-white/20 text-white font-bold uppercase tracking-widest hover:bg-white/10 transition rounded-sm">Cancel</button></div>
+                                        {/* PHOTO UPLOAD FIELD */}
+                                        <div className="mb-4">
+                                            <label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">
+                                                Upload a Selfie/Headshot <span className="text-red-500">*</span>
+                                            </label>
+                                            <div className="flex items-center gap-4">
+                                                {/* Preview Circle */}
+                                                <div className="w-16 h-16 rounded-full bg-gray-100 border border-gray-200 overflow-hidden flex-shrink-0">
+                                                    <img 
+                                                        id="photo-preview" 
+                                                        src="https://via.placeholder.com/150?text=Face" 
+                                                        className="w-full h-full object-cover" 
+                                                        alt="Preview" 
+                                                    />
+                                                </div>
+                                                {/* The Input */}
+                                                <input 
+                                                    type="file" 
+                                                    name="photo" 
+                                                    accept="image/*" 
+                                                    required
+                                                    onChange={(e) => {
+                                                        // Logic to show preview immediately
+                                                        const file = e.target.files[0];
+                                                        if (file) {
+                                                            document.getElementById('photo-preview').src = URL.createObjectURL(file);
+                                                        }
+                                                    }}
+                                                    className="text-xs text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-sm file:border-0 file:text-[10px] file:font-bold file:bg-ministry-blue file:text-white hover:file:bg-ministry-gold transition"
+                                                />
+                                            </div>
+                                            <p className="text-[9px] text-gray-400 mt-1">Required for entry verification.</p>
+                                        </div>
                                     </form>
                                 </div>
                             </div>
@@ -1489,7 +1858,7 @@ function App() {
                     </div>
                 </div>
             )}
-            
+
             {/* SUBSCRIBE MODAL */}
             {showSubscribeModal && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
@@ -1552,6 +1921,56 @@ function App() {
                         <p className="text-[10px] text-gray-400 mt-6">
                             We respect your privacy. No spam, ever.
                         </p>
+                    </div>
+                </div>
+            )}
+
+            {/* AUTH MODAL (Login / Signup) */}
+            {showAuthModal && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4 animate-fade-in">
+                    <div className="bg-white w-full max-w-sm p-8 rounded-sm shadow-2xl relative">
+                        <button 
+                            onClick={() => setShowAuthModal(false)}
+                            className="absolute top-4 right-4 text-gray-400 hover:text-red-600 font-bold"
+                        >✕</button>
+
+                        <h2 className="text-2xl font-serif font-bold text-ministry-blue mb-6 text-center">
+                            {authMode === 'login' ? 'Member Login' : 'Join the Family'}
+                        </h2>
+
+                        <form onSubmit={authMode === 'login' ? handleLogin : handleRegister} className="space-y-4">
+                            
+                            {authMode === 'register' && (
+                                <div>
+                                    <label className="text-[10px] font-bold uppercase text-gray-400">Full Name</label>
+                                    <input name="username" type="text" required className="w-full p-3 border border-gray-300 rounded-sm text-sm" />
+                                </div>
+                            )}
+
+                            <div>
+                                <label className="text-[10px] font-bold uppercase text-gray-400">{authMode === 'login' ? 'Email or Username' : 'Email Address'}</label>
+                                <input name="identifier" type={authMode === 'login' ? 'text' : 'email'} name={authMode === 'login' ? 'identifier' : 'email'} required className="w-full p-3 border border-gray-300 rounded-sm text-sm" />
+                            </div>
+
+                            <div>
+                                <label className="text-[10px] font-bold uppercase text-gray-400">Password</label>
+                                <input name="password" type="password" required className="w-full p-3 border border-gray-300 rounded-sm text-sm" />
+                            </div>
+
+                            <button className="w-full bg-ministry-blue text-white py-3 font-bold uppercase tracking-widest hover:bg-ministry-gold hover:text-ministry-blue transition shadow-lg mt-2">
+                                {authMode === 'login' ? 'Sign In' : 'Create Account'}
+                            </button>
+                        </form>
+
+                        <div className="mt-6 text-center text-xs text-gray-400">
+                            {authMode === 'login' ? "Don't have an account?" : "Already have an account?"}
+                            <button 
+                                onClick={() => setAuthMode(authMode === 'login' ? 'register' : 'login')}
+                                className="ml-2 text-ministry-blue font-bold uppercase underline hover:text-ministry-gold"
+                            >
+                                {authMode === 'login' ? 'Sign Up' : 'Login'}
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}
