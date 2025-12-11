@@ -5,235 +5,14 @@ import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { Scanner } from '@yudiel/react-qr-scanner';
 import AudioPlayer from 'react-h5-audio-player';
-import ReactPlayer from 'react-player';
+import { STRAPI_URL, SUPER_ADMINS, CONTENT_EDITORS } from './utils/constants';
+import GlobalStyles from './components/GlobalStyles';
+import EventTicket from './components/EventTicket';
+import BookCard from './components/BookCard';
+import DynamicLinkButton from './components/DynamicLinkButton';
+import { getImageUrl, formatCurrency, generateTicketCode, maskPhone, formatTimeWithAMPM, getSynopsisText } from './utils/helpers';
 import 'react-h5-audio-player/lib/styles.css';
 import './App.css';
-
-// =========================================
-// 2. CONSTANTS & CONFIG
-// =========================================
-const STRAPI_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:1337';
-const SUPER_ADMINS = ["superadmin@jesururujude.com"];
-
-// =========================================
-// 3. HELPER FUNCTIONS
-// =========================================
-const getImageUrl = (photoField) => {
-    if (!photoField) return null;
-    let photoData = photoField;
-    if (photoData.data) photoData = photoData.data;
-    if (photoData.attributes) photoData = photoData.attributes;
-
-    if (!photoData || !photoData.url) return null;
-    if (photoData.url.startsWith('http')) return photoData.url;
-    return `${STRAPI_URL}${photoData.url}`;
-};
-
-const formatCurrency = (amount, currencyCode) => {
-    try {
-        return new Intl.NumberFormat('en-US', { style: 'currency', currency: currencyCode }).format(amount);
-    } catch { return `${currencyCode} ${amount}`; }
-};
-
-const getSynopsisText = (synopsis) => {
-    if (!synopsis) return '';
-    if (typeof synopsis === 'string') return synopsis;
-    if (Array.isArray(synopsis)) {
-        return synopsis.map(block => block.children ? block.children.map(c => c.text).join(' ') : '').join(' ');
-    }
-    return '';
-};
-
-const generateTicketCode = () => {
-    const prefix = "TKT";
-    const randomNum = Math.floor(1000 + Math.random() * 9000);
-    return `${prefix}-${randomNum}`;
-};
-
-const maskEmail = (email) => {
-    if (!email) return '';
-    const [name, domain] = email.split('@');
-    const maskedName = name.length > 2 ? `${name.substring(0, 2)}***` : `${name[0]}***`;
-    return `${maskedName}@${domain}`;
-};
-
-const maskPhone = (phone) => {
-    if (!phone) return '';
-    return `*******${phone.slice(-4)}`;
-};
-
-const formatTimeWithAMPM = (timeStr) => {
-    if (!timeStr) return '';
-    const [hours, minutes] = timeStr.split(':');
-    const date = new Date();
-    date.setHours(parseInt(hours));
-    date.setMinutes(parseInt(minutes));
-    return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-};
-
-// =========================================
-// 4. SUB-COMPONENTS
-// =========================================
-const BookCard = ({ book, userCurrency, onPreorder, onPurchase }) => {
-    const [isExpanded, setIsExpanded] = useState(false);
-    const synopsis = getSynopsisText(book.Synopsis);
-    const isPreorder = book.LaunchDate && new Date(book.LaunchDate) > new Date();
-
-    let displayPrice = "View Details";
-    const prices = book.localPrices || book.LocalPrices || [];
-    if (prices.length > 0) {
-        const localMatch = prices.find(p => p.Currency === userCurrency) || prices.find(p => p.Currency === 'USD');
-        if (localMatch) displayPrice = formatCurrency(localMatch.Amount, localMatch.Currency);
-    }
-    const isLongText = synopsis && synopsis.length > 120;
-    const hasLinks = (book.purchaseLinks || book.PurchaseLinks || []).length > 0;
-
-    return (
-        <div className="group bg-white rounded-sm shadow-lg hover:-translate-y-2 transition-all duration-500 border-t-4 border-transparent hover:border-ministry-gold flex flex-col h-full overflow-hidden relative">
-            <div className="h-64 sm:h-80 w-full overflow-hidden bg-gray-100 relative flex-shrink-0">
-                {book.CoverArt && <img src={getImageUrl(book.CoverArt)} alt={book.Title} className="w-full h-full object-cover transform group-hover:scale-105 transition duration-500" />}
-                {isPreorder && <div className="absolute top-4 right-4 bg-ministry-gold text-white text-[10px] font-bold px-3 py-1 uppercase tracking-widest shadow-md">Coming Soon</div>}
-            </div>
-            <div className="p-6 flex flex-col flex-grow relative">
-                <h3 className="text-xl font-bold text-gray-900 mb-3 font-serif leading-tight">{book.Title}</h3>
-                <div className="relative mb-4 flex-grow">
-                    <p className={`text-gray-600 text-sm transition-all duration-300 ${!isExpanded ? 'line-clamp-3 md:line-clamp-6' : ''}`}>{synopsis}</p>
-                    {isLongText && <button onClick={() => setIsExpanded(!isExpanded)} className="mt-2 text-xs font-bold text-ministry-blue uppercase"> {isExpanded ? 'Show Less ↑' : 'Read More ↓'} </button>}
-                </div>
-                <div className="mt-auto pt-4 border-t border-gray-50 flex items-center justify-between">
-                    <span className="text-ministry-gold font-bold text-lg">{displayPrice}</span>
-                    <div className={`inline-flex items-center justify-center rounded-sm transition shadow-sm ${isPreorder ? 'bg-gray-900 hover:bg-ministry-gold' : 'bg-ministry-blue hover:bg-ministry-gold'}`}>
-                        <button onClick={isPreorder ? onPreorder : onPurchase} disabled={!isPreorder && !hasLinks} className={`px-4 py-2 text-white text-xs font-bold uppercase tracking-widest ${(!isPreorder && !hasLinks) ? 'bg-gray-300 cursor-not-allowed' : ''}`}>
-                            {isPreorder ? 'Preorder' : (hasLinks ? 'Get Copy' : 'Unavailable')}
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
-};
-
-const DynamicLinkButton = ({ link, icon }) => {
-    const styles = {
-        amazon: "bg-orange-50 border-orange-200 text-orange-800 hover:bg-orange-100",
-        selar: "bg-purple-50 border-purple-200 text-purple-800 hover:bg-purple-100",
-        paystack: "bg-green-50 border-green-200 text-green-800 hover:bg-green-100",
-        audible: "bg-yellow-50 border-yellow-200 text-yellow-800 hover:bg-yellow-100",
-        default: "bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100"
-    };
-
-    const platformKey = link.Platform.toLowerCase();
-    let activeStyle = styles.default;
-    if (platformKey.includes('amazon')) activeStyle = styles.amazon;
-    if (platformKey.includes('selar')) activeStyle = styles.selar;
-    if (platformKey.includes('paystack')) activeStyle = styles.paystack;
-    if (platformKey.includes('audible')) activeStyle = styles.audible;
-
-    return (
-        <a href={link.Link} target="_blank" rel="noreferrer" className={`group flex items-center justify-between p-3 border rounded-sm transition-all ${activeStyle}`}>
-            <div className="flex items-center gap-3">
-                <span className="text-lg">{icon}</span>
-                <span className="font-bold text-sm">{link.Platform}</span>
-            </div>
-            <div className="flex items-center gap-2">
-                {link.PriceLabel && <span className="text-xs font-bold opacity-70">{link.PriceLabel}</span>}
-                <span className="text-lg opacity-0 group-hover:opacity-100 transition-opacity -translate-x-2 group-hover:translate-x-0">→</span>
-            </div>
-        </a>
-    );
-};
-
-const EventTicket = ({ event, isPast, onOpenEvent, onOpenGuestList, onOpenTeam, attendeeCount }) => {
-    const eventDate = new Date(event.RawSortingDate || new Date());
-    const month = eventDate.toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
-    const day = eventDate.toLocaleDateString('en-US', { day: '2-digit' });
-    const year = eventDate.getFullYear();
-    const diffTime = eventDate - new Date();
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-    return (
-        <div className={`flex flex-col md:flex-row rounded-sm overflow-hidden shadow-lg transition-all duration-300 ${isPast ? 'bg-gray-100 opacity-80' : 'bg-ministry-blue text-white border-l-4 border-ministry-gold'}`}>
-            {/* 1. DATE BOX */}
-            <div className={`p-6 md:w-32 flex flex-col items-center justify-center border-r-2 border-dashed ${isPast ? 'bg-gray-200 border-gray-300 text-gray-500' : 'bg-ministry-gold text-ministry-blue border-ministry-blue/20'}`}>
-                <span className="text-sm font-bold tracking-widest">{month}</span>
-                <span className="text-5xl font-serif font-bold leading-none">{day}</span>
-                <span className="text-xs font-bold mt-2 uppercase">{isPast ? year : (diffDays <= 0 ? 'TODAY' : `${diffDays} Days`)}</span>
-            </div>
-
-            {/* 2. POSTER */}
-            {event.Poster && <div className="hidden md:block w-48 bg-black relative"><img src={getImageUrl(event.Poster)} alt="Event" className="w-full h-full object-cover opacity-90" /></div>}
-
-            {/* 3. DETAILS */}
-            <div className="p-6 md:p-8 flex-1 flex flex-col justify-center">
-                <div className="flex flex-wrap items-center gap-4 mb-3">
-                    <span className={`px-3 py-1 text-[10px] font-bold uppercase tracking-widest rounded-sm border ${isPast ? 'bg-gray-200 text-gray-500 border-gray-300' : 'bg-white/10 text-ministry-gold border-ministry-gold/30'}`}>
-                        {event.Category}
-                    </span>
-                    <span className="text-white/20 hidden sm:inline">|</span>
-                    <span className="text-sm opacity-70 flex items-center gap-2 font-bold tracking-wide">
-                        🕒 {event.EventDateTime}
-                    </span>
-                </div>
-
-                <h3 className={`text-2xl font-serif font-bold mb-3 ${isPast ? 'text-gray-700' : 'text-white'}`}>{event.Title}</h3>
-                <p className="opacity-70 text-sm mb-6 line-clamp-2 leading-relaxed">{event.Description}</p>
-
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 pt-4 mt-auto border-t border-white/10">
-                    <div className="text-sm opacity-70 flex items-center gap-2">📍 {event.Venue}</div>
-                    <div className="flex flex-col items-center sm:items-end gap-3 w-full sm:w-auto">
-                        {isPast ? (
-                            <button disabled className="text-gray-400 text-xs font-bold uppercase tracking-widest">Event Ended</button>
-                        ) : (
-                            <>
-                                <button
-                                    onClick={() => onOpenEvent(event)}
-                                    className="bg-ministry-gold text-ministry-blue px-8 py-3 font-bold uppercase text-xs tracking-widest hover:bg-white transition shadow-lg rounded-sm w-full sm:w-auto text-center"
-                                >
-                                    {event.isBook ? 'RSVP for Launch' : 'Register / RSVP'}
-                                </button>
-                                <div className="flex gap-5">
-                                    {onOpenGuestList && (
-                                        <button
-                                            onClick={(e) => { e.stopPropagation(); onOpenGuestList(event.Title); }}
-                                            className="text-[10px] font-bold uppercase tracking-widest text-white/60 hover:text-white underline decoration-ministry-gold underline-offset-4"
-                                        >
-                                            Attendees ({attendeeCount || 0})
-                                        </button>
-                                    )}
-                                    {event.Team && event.Team.length > 0 && (
-                                        <button
-                                            onClick={(e) => { e.stopPropagation(); onOpenTeam(event); }}
-                                            className="text-[10px] font-bold uppercase tracking-widest text-ministry-gold hover:text-white"
-                                        >
-                                            View Team ({event.Team.length})
-                                        </button>
-                                    )}
-                                </div>
-                            </>
-                        )}
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
-};
-
-// =========================================
-// 3B. GLOBAL STYLES (Print Fix: Collapse Layout)
-// =========================================
-const GlobalStyles = () => (
-    <style>{`
-        @keyframes shine-move {
-          0% { background-position: 0% 50%; }
-          50% { background-position: 100% 50%; }
-          100% { background-position: 0% 50%; }
-        }
-        .animate-liquid-gold {
-          background-size: 200% auto;
-          animation: shine-move 3s linear infinite;
-        }
-      `}</style>
-);
 
 // =========================================
 // 5. MAIN APP COMPONENT
@@ -248,7 +27,9 @@ function App() {
     const [events, setEvents] = useState([]);
     const [allRegistrations, setAllRegistrations] = useState([]);
     const [currentSong, setCurrentSong] = useState(null);
-
+    // --- DEVOTIONAL STATE ---
+    const [devotionals, setDevotionals] = useState([]);
+    const [activeDevoIndex, setActiveDevoIndex] = useState(0);
     // Modals & UI
     const [showModal, setShowModal] = useState(false);
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -271,6 +52,10 @@ function App() {
     const [preorderModalOpen, setPreorderModalOpen] = useState(false);
     const [selectedBook, setSelectedBook] = useState(null);
     const [purchaseModalOpen, setPurchaseModalOpen] = useState(false);
+
+    // --- SUBSCRIBE STATE ---
+    const [showSubscribeModal, setShowSubscribeModal] = useState(false);
+    const [subscribeStatus, setSubscribeStatus] = useState(''); // 'loading', 'success', 'error'
 
     // =========================================
     // DEVICE AUTHORIZATION LOGIC
@@ -322,6 +107,24 @@ function App() {
     ];
 
     // --- EFFECTS ---
+    // --- DEEP LINKING (Open Shared Devotionals) ---
+    useEffect(() => {
+        if (devotionals.length > 0) {
+            const params = new URLSearchParams(window.location.search);
+            const linkedId = params.get('devo'); // Look for ?devo=123
+
+            if (linkedId) {
+                const foundIndex = devotionals.findIndex(d => d.id.toString() === linkedId);
+                if (foundIndex !== -1) {
+                    setActiveDevoIndex(foundIndex);
+                    // Wait a moment for layout to settle, then scroll
+                    setTimeout(() => {
+                        document.getElementById('devotionals')?.scrollIntoView({ behavior: 'smooth' });
+                    }, 1000);
+                }
+            }
+        }
+    }, [devotionals]); // Run this whenever devotionals finish loading
     // --- ROBUST SCROLL LOCK ---
     useEffect(() => {
         if (isVideoPlaying) {
@@ -397,19 +200,35 @@ function App() {
         const fetchData = async () => {
             try {
                 setLoading(true);
-                const [songsRes, booksRes, moviesRes, regRes, eventRes, quotesRes, videosRes] = await Promise.all([
+                const [songsRes, booksRes, moviesRes, regRes, eventRes, quotesRes, videosRes, devosRes] = await Promise.all([
                     axios.get(`${STRAPI_URL}/api/songs?populate=*`),
                     axios.get(`${STRAPI_URL}/api/books?populate[0]=CoverArt&populate[1]=TheTeam.Photo&populate[2]=LocalPrices`),
                     axios.get(`${STRAPI_URL}/api/movies?populate=*`),
                     axios.get(`${STRAPI_URL}/api/registrations?pagination[pageSize]=100`),
                     axios.get(`${STRAPI_URL}/api/events?populate[0]=Poster&populate[1]=Team.Photo`).catch(() => ({ data: { data: [] } })),
                     axios.get(`${STRAPI_URL}/api/quotes`).catch(() => ({ data: { data: [] } })),
-                    axios.get(`${STRAPI_URL}/api/videos?populate=*`).catch(() => ({ data: { data: [] } }))
+                    axios.get(`${STRAPI_URL}/api/videos?populate=*`).catch(() => ({ data: { data: [] } })),
+                    axios.get(`${STRAPI_URL}/api/devotionals?sort=Date:desc`).catch(() => ({ data: { data: [] } }))
                 ]);
                 setSongs(songsRes.data.data);
                 setBooks(booksRes.data.data);
                 setMovies(moviesRes.data.data);
                 setEvents(eventRes.data.data);
+
+                // === PROCESS DEVOTIONALS ===
+                const rawDevos = devosRes.data.data || [];
+                const processedDevos = rawDevos.map(item => {
+                    const attrs = item.attributes || item;
+                    return {
+                        id: item.id,
+                        title: attrs.Title || "Untitled",
+                        date: attrs.Date || "No Date",
+                        category: attrs.Category || "General",
+                        verse: attrs.Scripture || "",
+                        text: attrs.Body || ""
+                    };
+                });
+                setDevotionals(processedDevos);
 
                 // Process Quotes
                 const rawQuotes = quotesRes.data.data || [];
@@ -613,6 +432,115 @@ function App() {
     const stopScrolling = () => { if (scrollInterval.current) { clearInterval(scrollInterval.current); scrollInterval.current = null; } };
 
     // =========================================
+    // HANDLE NEWSLETTER SUBSCRIPTION
+    // =========================================
+    const handleSubscribe = async (e) => {
+        e.preventDefault();
+        setSubscribeStatus('loading');
+        
+        const name = e.target.name.value;
+        const email = e.target.email.value;
+
+        try {
+            await axios.post(`${STRAPI_URL}/api/subscribers`, { 
+                data: { Name: name, Email: email } 
+            });
+            
+            setSubscribeStatus('success');
+            
+            // Clear and close after 2 seconds
+            setTimeout(() => {
+                setSubscribeStatus('');
+                setShowSubscribeModal(false);
+            }, 2000);
+
+        } catch (error) {
+            console.error("Subscription Error:", error);
+            setSubscribeStatus('error');
+        }
+    };
+
+    const handleShareDevotional = async (devo) => {
+        if (!devo) return;
+
+        // Create a direct link to this specific entry
+        const shareUrl = `${window.location.origin}/?devo=${devo.id}`;
+        const shareText = `Read "${devo.title}" on Jude Jesururu's Daily Devotional:\n${shareUrl}`;
+
+        // 1. Try Native Share (Mobile)
+        if (navigator.share) {
+            try {
+                await navigator.share({
+                    title: devo.title,
+                    text: shareText,
+                    url: shareUrl
+                });
+                return;
+            } catch (err) {
+                // If user cancels, do nothing
+                if (err.name === 'AbortError') return;
+            }
+        }
+
+        // 2. Fallback: Copy to Clipboard (Desktop)
+        try {
+            await navigator.clipboard.writeText(shareText);
+            alert("Link copied to clipboard! 📋\nYou can now paste it anywhere.");
+        } catch (err) {
+            alert("Could not copy link.");
+        }
+    };
+    const handleWhatsAppShare = (devo) => {
+        const shareUrl = `${window.location.origin}/?devo=${devo.id}`;
+        const text = encodeURIComponent(`*${devo.title}* \n_${devo.verse}_ \n\nRead full entry here: ${shareUrl}`);
+        window.open(`https://wa.me/?text=${text}`, '_blank');
+    };
+    // =========================================
+    // ADMIN: HANDLE DEVOTIONAL UPLOAD
+    // =========================================
+    const handlePostDevotional = async (e) => {
+        e.preventDefault();
+        
+        // 1. Collect Data
+        const form = e.target;
+        const payload = {
+            Title: form.title.value,
+            Category: form.category.value,
+            Scripture: form.scripture.value,
+            Date: form.date.value,
+            Body: form.body.value
+        };
+
+        if (!adminUser || !adminUser.token) return alert("Session expired. Please login again.");
+
+        // 2. Send to Strapi
+        try {
+            await axios.post(`${STRAPI_URL}/api/devotionals`, { data: payload }, {
+                headers: { Authorization: `Bearer ${adminUser.token}` }
+            });
+            
+            alert("Devotional Posted Successfully! ✅");
+            form.reset(); // Clear the form
+            
+            // Optional: Refresh the list immediately so they see it
+            const res = await axios.get(`${STRAPI_URL}/api/devotionals?sort=Date:desc`);
+            const rawDevos = res.data.data || [];
+            const processedDevos = rawDevos.map(item => ({
+                id: item.id,
+                title: item.attributes.Title,
+                date: item.attributes.Date,
+                category: item.attributes.Category,
+                verse: item.attributes.Scripture,
+                text: item.attributes.Body
+            }));
+            setDevotionals(processedDevos);
+
+        } catch (error) {
+            console.error("Upload Failed:", error);
+            alert("Failed to post. Check your connection or permissions.");
+        }
+    };
+    // =========================================
     // TICKET DOWNLOAD HANDLER (Fixed Layout)
     // =========================================
     const handleDownloadTicket = async () => {
@@ -724,14 +652,46 @@ function App() {
                             <div><h3 className="font-bold text-lg leading-none">Admin Console</h3><p className="text-[10px] text-white/60 uppercase tracking-widest mt-1">Logged in as {adminUser.username}</p></div>
                             <button onClick={() => setShowAdminDashboard(false)} className="md:hidden text-white/50 hover:text-white text-2xl font-bold">✕</button>
                         </div>
+                        {/* === ADMIN TABS (Dynamic Permissions) === */}
                         <div className="flex w-full md:w-auto gap-2">
-                            <button onClick={() => setAdminFormData({ ...adminFormData, activeTab: 'gatekeeper' })} className={`flex-1 md:flex-none px-3 py-2 rounded text-[10px] md:text-xs font-bold uppercase tracking-widest border border-white/20 transition ${adminFormData.activeTab === 'gatekeeper' ? 'bg-ministry-gold text-ministry-blue border-ministry-gold' : 'hover:bg-white/10'}`}>Scanner</button>
-                            {adminUser.role === 'super_admin' && (
+                            
+                            {/* 1. SCANNER (Visible to EVERYONE who logs in) */}
+                            <button 
+                                onClick={() => setAdminFormData({...adminFormData, activeTab: 'gatekeeper'})} 
+                                className={`flex-1 md:flex-none px-3 py-2 rounded text-[10px] md:text-xs font-bold uppercase tracking-widest border border-white/20 transition ${adminFormData.activeTab === 'gatekeeper' ? 'bg-ministry-gold text-ministry-blue border-ministry-gold' : 'hover:bg-white/10'}`}
+                            >
+                                Scanner
+                            </button>
+
+                            {/* 2. QUOTES & TEAM (Strictly for SUPER ADMINS only) */}
+                            {SUPER_ADMINS.includes(adminUser.email) && (
                                 <>
-                                    <button onClick={() => setAdminFormData({ ...adminFormData, activeTab: 'quotes' })} className={`flex-1 md:flex-none px-3 py-2 rounded text-[10px] md:text-xs font-bold uppercase tracking-widest border border-white/20 transition ${adminFormData.activeTab === 'quotes' ? 'bg-ministry-gold text-ministry-blue border-ministry-gold' : 'hover:bg-white/10'}`}>Quotes</button>
-                                    <button onClick={() => setAdminFormData({ ...adminFormData, activeTab: 'team' })} className={`flex-1 md:flex-none px-3 py-2 rounded text-[10px] md:text-xs font-bold uppercase tracking-widest border border-white/20 transition ${adminFormData.activeTab === 'team' ? 'bg-ministry-gold text-ministry-blue border-ministry-gold' : 'hover:bg-white/10'}`}>Team</button>
+                                    <button 
+                                        onClick={() => setAdminFormData({...adminFormData, activeTab: 'quotes'})} 
+                                        className={`flex-1 md:flex-none px-3 py-2 rounded text-[10px] md:text-xs font-bold uppercase tracking-widest border border-white/20 transition ${adminFormData.activeTab === 'quotes' ? 'bg-ministry-gold text-ministry-blue border-ministry-gold' : 'hover:bg-white/10'}`}
+                                    >
+                                        Quotes
+                                    </button>
+                                    <button 
+                                        onClick={() => setAdminFormData({...adminFormData, activeTab: 'team'})} 
+                                        className={`flex-1 md:flex-none px-3 py-2 rounded text-[10px] md:text-xs font-bold uppercase tracking-widest border border-white/20 transition ${adminFormData.activeTab === 'team' ? 'bg-ministry-gold text-ministry-blue border-ministry-gold' : 'hover:bg-white/10'}`}
+                                    >
+                                        Team
+                                    </button>
                                 </>
                             )}
+
+                            {/* 3. DEVOTIONALS (Visible to YOU and ASSISTANT) */}
+                            {(SUPER_ADMINS.includes(adminUser.email) || CONTENT_EDITORS.includes(adminUser.email)) && (
+                                <button 
+                                    onClick={() => setAdminFormData({...adminFormData, activeTab: 'devotionals'})} 
+                                    className={`flex-1 md:flex-none px-3 py-2 rounded text-[10px] md:text-xs font-bold uppercase tracking-widest border border-white/20 transition ${adminFormData.activeTab === 'devotionals' ? 'bg-ministry-gold text-ministry-blue border-ministry-gold' : 'hover:bg-white/10'}`}
+                                >
+                                    Devotionals
+                                </button>
+                            )}
+                            
+                            {/* LOGOUT */}
                             <button onClick={() => { setAdminUser(null); setShowAdminDashboard(false); }} className="bg-red-600 px-3 py-2 rounded text-[10px] md:text-xs font-bold uppercase tracking-widest hover:bg-red-700">Logout</button>
                         </div>
                         <button onClick={() => setShowAdminDashboard(false)} className="hidden md:block text-white/50 hover:text-white text-2xl font-bold">✕</button>
@@ -782,6 +742,66 @@ function App() {
                                 </div>
                             </div>
                         )}
+                        {/* === DEVOTIONALS TAB === */}
+                        {adminFormData.activeTab === 'devotionals' && (
+                            <div className="bg-white p-4 md:p-8 rounded shadow-lg max-w-2xl mx-auto">
+                                <h3 className="text-lg md:text-xl font-bold mb-6 text-gray-700 uppercase tracking-widest border-b pb-2">
+                                    Upload Daily Word
+                                </h3>
+                                
+                                <form onSubmit={handlePostDevotional} className="space-y-5">
+                                    
+                                    {/* Title & Date */}
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Title</label>
+                                            <input name="title" type="text" placeholder="e.g. The Architecture of Faith" required className="w-full p-3 border border-gray-300 focus:border-ministry-gold outline-none text-sm rounded-sm" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Date</label>
+                                            <input name="date" type="date" required defaultValue={new Date().toISOString().split('T')[0]} className="w-full p-3 border border-gray-300 focus:border-ministry-gold outline-none text-sm rounded-sm uppercase" />
+                                        </div>
+                                    </div>
+
+                                    {/* Category & Scripture */}
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Category</label>
+                                            <select name="category" className="w-full p-3 border border-gray-300 focus:border-ministry-gold outline-none text-sm rounded-sm bg-white">
+                                                <option value="Wisdom">Wisdom</option>
+                                                <option value="Warfare">Warfare</option>
+                                                <option value="Family">Family</option>
+                                                <option value="Ministry">Ministry</option>
+                                                <option value="Finance">Finance</option>
+                                                <option value="Prophetic">Prophetic</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Scripture Reference</label>
+                                            <input name="scripture" type="text" placeholder="e.g. Hebrews 11:1" required className="w-full p-3 border border-gray-300 focus:border-ministry-gold outline-none text-sm rounded-sm" />
+                                        </div>
+                                    </div>
+
+                                    {/* The Body */}
+                                    <div>
+                                        <label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Message Body</label>
+                                        <textarea 
+                                            name="body" 
+                                            rows="8" 
+                                            placeholder="Type the devotional content here..." 
+                                            required 
+                                            className="w-full p-3 border border-gray-300 focus:border-ministry-gold outline-none text-sm rounded-sm leading-relaxed"
+                                        ></textarea>
+                                        <p className="text-[10px] text-gray-400 mt-1">* Tips: Use double 'Enter' for new paragraphs.</p>
+                                    </div>
+
+                                    {/* Submit */}
+                                    <button className="w-full bg-ministry-blue text-white py-4 font-bold uppercase tracking-widest hover:bg-ministry-gold hover:text-ministry-blue transition shadow-lg text-sm rounded-sm">
+                                        Publish Entry
+                                    </button>
+                                </form>
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
@@ -804,10 +824,81 @@ function App() {
                                 <div className="absolute -bottom-4 left-0 w-full text-center opacity-0 group-hover:opacity-100 transition-all duration-500 transform translate-y-2 group-hover:translate-y-0 hidden md:block"><span className="text-[8px] uppercase tracking-[0.3em] font-bold text-ministry-gold/80">Faith & Excellence</span></div>
                             </div>
                         </div>
+                        {/* DESKTOP MENU (Grouped Strategy) */}
                         <div className="hidden md:flex items-center gap-8">
-                            <div className="flex gap-6">{['Home', 'About', 'Events', 'Books', 'Films', 'Worship'].map((item) => (<button key={item} onClick={() => scrollToSection(item.toLowerCase())} className="text-xs font-bold uppercase tracking-widest text-gray-300 hover:text-ministry-gold transition-colors relative group">{item}<span className="absolute -bottom-1 left-0 w-0 h-[1px] bg-ministry-gold transition-all duration-300 group-hover:w-full"></span></button>))}</div>
+                            <div className="flex gap-6 items-center">
+                                
+                                {/* 1. PRIMARY ITEMS */}
+                                {['Home', 'About', 'Events'].map((item) => (
+                                    <button 
+                                        key={item} 
+                                        onClick={() => scrollToSection(item.toLowerCase())} 
+                                        className="text-xs font-bold uppercase tracking-widest text-gray-300 hover:text-ministry-gold transition-colors relative group"
+                                    >
+                                        {item}
+                                        <span className="absolute -bottom-1 left-0 w-0 h-[1px] bg-ministry-gold transition-all duration-300 group-hover:w-full"></span>
+                                    </button>
+                                ))}
+
+                                {/* 2. THE "RESOURCES" DROPDOWN */}
+                                <div className="relative group/dropdown py-4"> {/* Padding ensures hover doesn't break */}
+                                    <button className="text-xs font-bold uppercase tracking-widest text-gray-300 hover:text-ministry-gold transition-colors flex items-center gap-1">
+                                        Resources
+                                        <svg className="w-3 h-3 text-ministry-gold" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+                                    </button>
+
+                                    {/* The Dropdown Box */}
+                                    <div className="absolute top-full left-1/2 -translate-x-1/2 mt-0 w-48 bg-[#0B1120] border border-white/10 shadow-xl opacity-0 invisible group-hover/dropdown:opacity-100 group-hover/dropdown:visible transition-all duration-300 transform translate-y-2 group-hover/dropdown:translate-y-0 rounded-sm overflow-hidden z-50">
+                                        
+                                        {/* Devotionals */}
+                                        <button 
+                                            onClick={() => scrollToSection('devotionals')} 
+                                            className="block w-full text-left px-4 py-3 text-[10px] uppercase font-bold text-gray-400 hover:text-white hover:bg-white/5 transition-colors border-b border-white/5"
+                                        >
+                                            Daily Devotionals
+                                        </button>
+
+                                        {/* Podcast */}
+                                        <button 
+                                            onClick={() => scrollToSection('podcast')}
+                                            className="block w-full text-left px-4 py-3 text-[10px] uppercase font-bold text-gray-400 hover:text-white hover:bg-white/5 transition-colors border-b border-white/5"
+                                        >
+                                            Podcast
+                                        </button>
+
+                                        {/* Book Reviews */}
+                                        <button 
+                                            onClick={() => scrollToSection('books')} // Assuming 'books' section handles reviews
+                                            className="block w-full text-left px-4 py-3 text-[10px] uppercase font-bold text-gray-400 hover:text-white hover:bg-white/5 transition-colors border-b border-white/5"
+                                        >
+                                            Book Reviews
+                                        </button>
+
+                                        {/* Worship */}
+                                        <button 
+                                            onClick={() => scrollToSection('worship')}
+                                            className="block w-full text-left px-4 py-3 text-[10px] uppercase font-bold text-gray-400 hover:text-white hover:bg-white/5 transition-colors"
+                                        >
+                                            Worship
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* 3. FILMS (Kept Separate as Major Content) */}
+                                <button 
+                                    onClick={() => scrollToSection('films')} 
+                                    className="text-xs font-bold uppercase tracking-widest text-gray-300 hover:text-ministry-gold transition-colors relative group"
+                                >
+                                    Films
+                                    <span className="absolute -bottom-1 left-0 w-0 h-[1px] bg-ministry-gold transition-all duration-300 group-hover:w-full"></span>
+                                </button>
+
+                            </div>
+
                             <div className="h-4 w-[1px] bg-white/20"></div>
+                            {/* ... Keep your Social Icons & Invite Button here ... */}
                             <div className="flex items-center gap-4">
+                                {/* (Paste your social icons back here) */}
                                 <a href="https://instagram.com" target="_blank" rel="noreferrer" className="text-gray-400 hover:text-ministry-gold transition-colors"><svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/></svg></a>
                                 <a href="https://youtube.com" target="_blank" rel="noreferrer" className="text-gray-400 hover:text-red-600 transition-colors"><svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M19.615 3.184c-3.604-.246-11.631-.245-15.23 0-3.897.266-4.356 2.62-4.385 8.816.029 6.185.484 8.549 4.385 8.816 3.6.245 11.626.246 15.23 0 3.897-.266 4.356-2.62 4.385-8.816-.029-6.185-.484-8.549-4.385-8.816zm-10.615 12.816v-8l8 3.993-8 4.007z"/></svg></a>
                             </div>
@@ -816,15 +907,36 @@ function App() {
                         <div className="md:hidden flex items-center"><button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="text-ministry-gold hover:text-white focus:outline-none"><svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">{mobileMenuOpen ? (<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />) : (<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />)}</svg></button></div>
                     </div>
                 </div>
+                {/* MOBILE MENU DROPDOWN */}
                 {mobileMenuOpen && (
-                    <div className="md:hidden bg-[#0B1120] border-t border-white/10 absolute w-full shadow-2xl">
-                        <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3 flex flex-col items-center">
-                            {['Home', 'About', 'Events', 'Books', 'Films', 'Worship'].map((item) => (<button key={item} onClick={() => scrollToSection(item.toLowerCase())} className="block px-3 py-4 text-sm font-bold text-gray-300 hover:text-ministry-gold uppercase tracking-widest">{item}</button>))}
-                            <div className="flex gap-6 py-4">
-                                <a href="#" className="text-gray-400 hover:text-ministry-gold"><svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/></svg></a>
-                                <a href="#" className="text-gray-400 hover:text-red-600"><svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M19.615 3.184c-3.604-.246-11.631-.245-15.23 0-3.897.266-4.356 2.62-4.385 8.816.029 6.185.484 8.549 4.385 8.816 3.6.245 11.626.246 15.23 0 3.897-.266 4.356-2.62 4.385-8.816-.029-6.185-.484-8.549-4.385-8.816zm-10.615 12.816v-8l8 3.993-8 4.007z"/></svg></a>
-                            </div>
-                            <button onClick={() => setShowModal(true)} className="w-full mt-2 bg-ministry-gold text-[#0B1120] py-3 font-bold uppercase tracking-widest hover:bg-white transition">Invite</button>
+                    <div className="md:hidden bg-[#0B1120] border-t border-white/10 absolute w-full shadow-2xl max-h-[80vh] overflow-y-auto">
+                        <div className="px-4 pt-4 pb-6 space-y-4 flex flex-col items-center">
+                        
+                        {/* Primary Links */}
+                        {['Home', 'About', 'Events'].map((item) => (
+                            <button key={item} onClick={() => scrollToSection(item.toLowerCase())} className="text-sm font-bold text-gray-300 hover:text-ministry-gold uppercase tracking-widest">{item}</button>
+                        ))}
+
+                        {/* Grouped Section Divider */}
+                        <div className="w-full border-t border-white/10 my-2"></div>
+                        <span className="text-[10px] text-ministry-gold uppercase tracking-[0.2em] font-bold">Resources</span>
+                        
+                        {/* Sub-Items */}
+                        <button onClick={() => scrollToSection('devotionals')} className="text-sm font-bold text-gray-400 hover:text-white uppercase tracking-widest">Devotionals</button>
+                        <button onClick={() => scrollToSection('podcast')} className="text-sm font-bold text-gray-400 hover:text-white uppercase tracking-widest">Podcast</button>
+                        <button onClick={() => scrollToSection('books')} className="text-sm font-bold text-gray-400 hover:text-white uppercase tracking-widest">Book Reviews</button>
+                        <button onClick={() => scrollToSection('worship')} className="text-sm font-bold text-gray-400 hover:text-white uppercase tracking-widest">Worship</button>
+                        
+                        {/* Divider */}
+                        <div className="w-full border-t border-white/10 my-2"></div>
+                        <button onClick={() => scrollToSection('films')} className="text-sm font-bold text-gray-300 hover:text-ministry-gold uppercase tracking-widest">Films</button>
+
+                        {/* Socials & Invite */}
+                        <div className="flex gap-6 py-4">
+                            <a href="#" className="text-gray-400 hover:text-ministry-gold"><svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/></svg></a>
+                            <a href="#" className="text-gray-400 hover:text-red-600"><svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M19.615 3.184c-3.604-.246-11.631-.245-15.23 0-3.897.266-4.356 2.62-4.385 8.816.029 6.185.484 8.549 4.385 8.816 3.6.245 11.626.246 15.23 0 3.897-.266 4.356-2.62 4.385-8.816-.029-6.185-.484-8.549-4.385-8.816zm-10.615 12.816v-8l8 3.993-8 4.007z"/></svg></a>
+                        </div>
+                        <button onClick={() => setShowModal(true)} className="w-full mt-2 bg-ministry-gold text-[#0B1120] py-3 font-bold uppercase tracking-widest hover:bg-white transition">Invite</button>
                         </div>
                     </div>
                 )}
@@ -964,6 +1076,184 @@ function App() {
                 </div>
             </section>
 
+            {/* ========================================= */}
+            {/* DAILY DEVOTIONALS (Sidebar Interface)     */}
+            {/* ========================================= */}
+            <section id="devotionals" className="py-24 bg-white border-b border-gray-100">
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                
+                {/* Header */}
+                <div className="text-center mb-16">
+                    <span className="text-ministry-gold font-bold uppercase tracking-widest text-xs block mb-2">Spiritual Growth</span>
+                    <h2 className="text-4xl font-serif font-bold text-ministry-blue mb-4">Daily Devotionals</h2>
+                    <div className="w-20 h-1 bg-ministry-gold mx-auto"></div>
+                </div>
+
+                {/* THE INTERFACE */}
+                <div className="flex flex-col lg:flex-row bg-gray-50 rounded-sm border border-gray-200 overflow-hidden shadow-xl min-h-[600px]">
+                    
+                    {/* 1. SIDEBAR (List) */}
+                    <div className="lg:w-4/12 border-b lg:border-b-0 lg:border-r border-gray-200 bg-white flex flex-col">
+                        <div className="p-6 border-b border-gray-100 bg-gray-50">
+                            <h3 className="text-xs font-bold uppercase tracking-widest text-gray-400">Recent Entries</h3>
+                        </div>
+                        
+                        <div className="overflow-y-auto h-[300px] lg:h-auto custom-scrollbar">
+                            {devotionals.length > 0 ? (
+                                devotionals.map((item, index) => (
+                                    <button 
+                                        key={item.id}
+                                        onClick={() => setActiveDevoIndex(index)}
+                                        className={`w-full text-left p-6 border-b border-gray-100 transition-all duration-300 group relative ${activeDevoIndex === index ? 'bg-ministry-blue' : 'hover:bg-gray-50'}`}
+                                    >
+                                        <div className="flex justify-between items-start mb-2">
+                                            <span className={`text-[10px] font-bold uppercase tracking-widest ${activeDevoIndex === index ? 'text-ministry-gold' : 'text-gray-400 group-hover:text-ministry-blue'}`}>
+                                                {/* Format Date nicely (e.g., Oct 24) */}
+                                                {new Date(item.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} • {item.category}
+                                            </span>
+                                            {activeDevoIndex === index && <span className="text-ministry-gold text-xs">●</span>}
+                                        </div>
+                                        <h4 className={`text-base font-serif font-bold leading-tight ${activeDevoIndex === index ? 'text-white' : 'text-gray-800'}`}>{item.title}</h4>
+                                    </button>
+                                ))
+                            ) : (
+                                <div className="p-8 text-center text-gray-400 italic text-xs">No devotionals uploaded yet.</div>
+                            )}
+                        </div>
+                        
+                        {/* Sidebar Footer */}
+                        <div className="mt-auto p-6 bg-gray-50 border-t border-gray-200">
+                            <button onClick={() => setShowSubscribeModal(true)} className="w-full py-3 border border-ministry-blue text-ministry-blue text-xs font-bold uppercase tracking-widest hover:bg-ministry-blue hover:text-white transition rounded-sm">Subscribe to Daily List</button>
+                        </div>
+                    </div>
+
+                    {/* 2. READING PANE (Content) */}
+                    <div className="lg:w-8/12 bg-white relative">
+                        {devotionals.length > 0 && devotionals[activeDevoIndex] ? (
+                            <div className="h-full flex flex-col p-8 md:p-16 overflow-y-auto custom-scrollbar animate-fade-in">
+                                <span className="text-ministry-gold text-xs font-bold uppercase tracking-widest mb-4 block">
+                                    {new Date(devotionals[activeDevoIndex].date).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                                </span>
+                                <h3 className="text-3xl md:text-4xl font-serif font-bold text-ministry-blue mb-6">{devotionals[activeDevoIndex].title}</h3>
+                                
+                                <div className="w-12 h-1 bg-gray-100 mb-8"></div>
+                                
+                                {/* Scripture Box */}
+                                {devotionals[activeDevoIndex].verse && (
+                                    <div className="bg-gray-50 border-l-4 border-ministry-gold p-6 mb-8 italic text-gray-600 font-serif">
+                                        "{devotionals[activeDevoIndex].verse}"
+                                    </div>
+                                )}
+
+                                {/* The Main Content */}
+                                <div className="prose prose-lg text-gray-600 leading-relaxed whitespace-pre-line mb-12 font-serif">
+                                    {devotionals[activeDevoIndex].text}
+                                </div>
+
+                                {/* Action Area (Share & Copy) */}
+                                <div className="mt-auto pt-8 border-t border-gray-100 flex items-center justify-between">
+                                    <div className="flex gap-4">
+                                        
+                                        {/* Copy Link Button */}
+                                        <button 
+                                            onClick={() => handleShareDevotional(devotionals[activeDevoIndex])}
+                                            className="text-gray-400 hover:text-ministry-blue transition group relative" 
+                                            title="Copy Link"
+                                        >
+                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg>
+                                            <span className="absolute -top-8 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-[9px] py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition whitespace-nowrap">Copy Link</span>
+                                        </button>
+                                        
+                                        {/* WhatsApp Button (New) */}
+                                        <button 
+                                            onClick={() => handleWhatsAppShare(devotionals[activeDevoIndex])}
+                                            className="text-gray-400 hover:text-[#25D366] transition group relative" 
+                                            title="Share to WhatsApp"
+                                        >
+                                            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.463 1.065 2.876 1.213 3.074.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z"/></svg>
+                                            <span className="absolute -top-8 left-1/2 -translate-x-1/2 bg-[#25D366] text-white text-[9px] py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition whitespace-nowrap">Share on WhatsApp</span>
+                                        </button>
+                                    </div>
+
+                                    <button 
+                                        onClick={() => handleShareDevotional(devotionals[activeDevoIndex])}
+                                        className="text-xs text-gray-300 font-bold uppercase tracking-widest hover:text-ministry-gold transition"
+                                    >
+                                        Share Entry
+                                    </button>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="h-full flex items-center justify-center text-gray-300 flex-col">
+                                <span className="text-4xl mb-4">📖</span>
+                                <p className="text-sm font-bold uppercase tracking-widest">Select an entry to read</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+                </div>
+            </section>
+
+            {/* ========================================= */}
+            {/* PODCAST SECTION                           */}
+            {/* ========================================= */}
+            <section id="podcast" className="py-24 bg-[#0B1120] relative overflow-hidden">
+                {/* Background Accent */}
+                <div className="absolute right-0 top-0 w-1/2 h-full bg-gradient-to-l from-ministry-blue/50 to-transparent pointer-events-none"></div>
+                
+                <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+                <div className="flex flex-col md:flex-row items-center gap-12 md:gap-20">
+                    
+                    {/* Left: Visual / Cover Art */}
+                    <div className="w-full md:w-1/2 relative group">
+                    <div className="absolute inset-0 bg-ministry-gold/20 blur-2xl rounded-full transform group-hover:scale-110 transition-transform duration-700"></div>
+                    <div className="relative aspect-square bg-gray-800 rounded-sm border border-white/10 shadow-2xl overflow-hidden flex items-center justify-center">
+                        {/* Replace this div with your Podcast Cover Image later */}
+                        <div className="text-center">
+                            <span className="text-6xl mb-4 block">🎙️</span>
+                            <h3 className="text-white font-serif font-bold text-2xl">The Jude Jesururu<br/><span className="text-ministry-gold">Podcast</span></h3>
+                        </div>
+                    </div>
+                    
+                    {/* Floating Badge */}
+                    <div className="absolute -bottom-6 -right-6 bg-ministry-gold text-ministry-blue p-6 rounded-full shadow-lg hidden md:block animate-bounce-slow">
+                        <span className="block text-2xl font-black">New</span>
+                        <span className="block text-[10px] font-bold uppercase tracking-widest">Episode</span>
+                    </div>
+                    </div>
+
+                    {/* Right: Content & List */}
+                    <div className="w-full md:w-1/2 text-left">
+                    <span className="text-ministry-gold font-bold uppercase tracking-[0.2em] text-xs block mb-4">Now Streaming</span>
+                    <h2 className="text-4xl md:text-5xl font-serif font-bold text-white mb-6 leading-tight">Conversations on <br/>Faith & Culture</h2>
+                    <p className="text-gray-400 text-sm leading-relaxed mb-8">
+                        Deep dives into theology, creativity, and navigating modern life with a Kingdom mindset. Join Jude and special guests every Friday.
+                    </p>
+
+                    {/* Episode List (Static for now) */}
+                    <div className="space-y-4 mb-10">
+                        {[1, 2, 3].map((ep) => (
+                        <div key={ep} className="flex items-center gap-4 p-4 rounded-sm border border-white/5 hover:bg-white/5 hover:border-ministry-gold/30 transition cursor-pointer group">
+                            <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-ministry-gold group-hover:bg-ministry-gold group-hover:text-ministry-blue transition">▶</div>
+                            <div>
+                            <h4 className="text-white font-bold text-sm">Episode {ep}: defining Excellence in Ministry</h4>
+                            <span className="text-xs text-gray-500">24 mins • Audio</span>
+                            </div>
+                        </div>
+                        ))}
+                    </div>
+
+                    {/* Links */}
+                    <div className="flex gap-4">
+                        <button className="px-6 py-3 border border-white/20 text-white font-bold uppercase text-xs tracking-widest hover:bg-white hover:text-ministry-blue transition rounded-sm">Apple Podcasts</button>
+                        <button className="px-6 py-3 bg-[#1DB954] text-white font-bold uppercase text-xs tracking-widest hover:bg-[#1ed760] transition rounded-sm border-none">Spotify</button>
+                    </div>
+                    </div>
+
+                </div>
+                </div>
+            </section>
+            
             {/* FILMS SECTION */}
             <section id="films" className="py-24 bg-white">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -1196,6 +1486,72 @@ function App() {
                             <div><label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Password</label><input type="password" placeholder="••••••••" className="w-full p-3 border border-gray-300 focus:border-ministry-gold outline-none text-sm rounded-sm" value={adminFormData.password} onChange={(e) => setAdminFormData({ ...adminFormData, password: e.target.value })} required /></div>
                             <button className="w-full bg-ministry-blue text-white py-3 font-bold uppercase tracking-widest hover:bg-ministry-gold transition shadow-lg text-xs rounded-sm">Authenticate</button>
                         </form>
+                    </div>
+                </div>
+            )}
+            
+            {/* SUBSCRIBE MODAL */}
+            {showSubscribeModal && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
+                    <div className="bg-white w-full max-w-md p-8 rounded-sm shadow-2xl relative text-center">
+                        <button 
+                            className="absolute top-4 right-4 text-gray-400 hover:text-red-500 text-xl font-bold" 
+                            onClick={() => { setShowSubscribeModal(false); setSubscribeStatus(''); }}
+                        >
+                            ✕
+                        </button>
+                        
+                        <span className="text-4xl mb-4 block">📩</span>
+                        <h2 className="text-2xl font-serif font-bold text-ministry-blue mb-2">Join the Daily List</h2>
+                        <p className="text-gray-500 text-sm mb-6 leading-relaxed">
+                            Start your morning with Kingdom perspective. Delivered daily at 6AM directly to your inbox.
+                        </p>
+
+                        {subscribeStatus === 'success' ? (
+                            <div className="bg-green-50 text-green-700 p-4 rounded-sm border border-green-200">
+                                <p className="font-bold">Welcome to the family! ✅</p>
+                                <p className="text-xs mt-1">Check your inbox shortly.</p>
+                            </div>
+                        ) : (
+                            <form onSubmit={handleSubscribe} className="space-y-4 text-left">
+                                <div>
+                                    <label className="text-[10px] font-bold uppercase text-gray-400 mb-1 block">Your Name</label>
+                                    <input 
+                                        type="text" 
+                                        name="name" 
+                                        required 
+                                        placeholder="John Doe"
+                                        className="w-full p-3 border border-gray-300 focus:border-ministry-gold focus:outline-none text-sm rounded-sm" 
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-[10px] font-bold uppercase text-gray-400 mb-1 block">Email Address</label>
+                                    <input 
+                                        type="email" 
+                                        name="email" 
+                                        required 
+                                        placeholder="john@example.com"
+                                        className="w-full p-3 border border-gray-300 focus:border-ministry-gold focus:outline-none text-sm rounded-sm" 
+                                    />
+                                </div>
+                                
+                                {subscribeStatus === 'error' && (
+                                    <p className="text-red-500 text-xs text-center font-bold">Something went wrong. Please try again.</p>
+                                )}
+
+                                <button 
+                                    type="submit" 
+                                    disabled={subscribeStatus === 'loading'}
+                                    className="w-full bg-ministry-blue text-white py-3 font-bold uppercase tracking-widest hover:bg-ministry-gold hover:text-ministry-blue transition shadow-lg mt-2 disabled:bg-gray-400"
+                                >
+                                    {subscribeStatus === 'loading' ? 'Processing...' : 'Subscribe Free'}
+                                </button>
+                            </form>
+                        )}
+                        
+                        <p className="text-[10px] text-gray-400 mt-6">
+                            We respect your privacy. No spam, ever.
+                        </p>
                     </div>
                 </div>
             )}
