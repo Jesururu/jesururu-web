@@ -6,7 +6,6 @@ import axios from 'axios';
 import { Scanner } from '@yudiel/react-qr-scanner';
 import AudioPlayer from 'react-h5-audio-player';
 import { STRAPI_URL, SUPER_ADMINS, CONTENT_EDITORS } from './utils/constants';
-import PaystackTrigger from './components/PaystackTrigger';
 import GlobalStyles from './components/GlobalStyles';
 import EventTicket from './components/EventTicket';
 import BookCard from './components/BookCard';
@@ -57,10 +56,6 @@ function App() {
     const [teamModalOpen, setTeamModalOpen] = useState(false);
     const [guestListModalOpen, setGuestListModalOpen] = useState(false);
     const [viewingGuestsFor, setViewingGuestsFor] = useState(null);
-
-    // Payment Form State
-    const [preorderName, setPreorderName] = useState('');
-    const [preorderEmail, setPreorderEmail] = useState('');
 
     const [preorderModalOpen, setPreorderModalOpen] = useState(false);
     const [selectedBook, setSelectedBook] = useState(null);
@@ -2030,90 +2025,18 @@ function App() {
 
             {preorderModalOpen && selectedBook && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center bg-ministry-blue/90 backdrop-blur-sm p-4 animate-fade-in">
-                    
-                    {/* CONTAINER: Reduced max-w-5xl to max-w-3xl for a cleaner look */}
-                    <div className="bg-white w-full max-w-3xl rounded-sm shadow-2xl overflow-hidden flex flex-col md:flex-row relative max-h-[90vh] md:max-h-[85vh]">
-                        
-                        {/* Close Button */}
+                    <div className="bg-white w-full max-w-5xl rounded-sm shadow-2xl overflow-hidden flex flex-col md:flex-row relative max-h-[90vh] md:max-h-none overflow-y-auto md:overflow-visible">
                         <button onClick={() => setPreorderModalOpen(false)} className="absolute top-4 right-4 z-50 text-gray-400 hover:text-red-500 text-2xl font-bold bg-white/80 rounded-full w-8 h-8 flex items-center justify-center shadow-sm">✕</button>
-
-                        {/* === LEFT SIDE (IMAGE) === */}
-                        {/* Added 'hidden md:flex' to HIDE this big block on mobile */}
-                        <div className="hidden md:flex md:w-5/12 bg-gray-100 items-center justify-center p-8 relative overflow-hidden min-h-[300px]">
-                            <div className="absolute inset-0 opacity-10 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]"></div>
-                            <div className="relative w-40 shadow-[0_20px_50px_rgba(0,0,0,0.3)] transform rotate-[-5deg] hover:rotate-0 transition duration-500 z-10">
-                                {selectedBook.CoverArt && <img src={getImageUrl(selectedBook.CoverArt)} alt="Cover" className="w-full rounded-sm" />}
+                        <div className="md:w-5/12 bg-gray-100 flex items-center justify-center p-8 relative overflow-hidden min-h-[300px]"><div className="absolute inset-0 opacity-10 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]"></div><div className="relative w-48 shadow-[0_20px_50px_rgba(0,0,0,0.3)] transform rotate-[-5deg] hover:rotate-0 transition duration-500 z-10">{selectedBook.CoverArt && <img src={getImageUrl(selectedBook.CoverArt)} alt="Cover" className="w-full rounded-sm" />}</div></div>
+                        <div className="md:w-7/12 p-8 md:p-10 flex flex-col text-left">
+                            <div className="inline-block border-b-2 border-ministry-gold pb-1 mb-4 w-max"><span className="text-ministry-gold font-bold tracking-[0.2em] uppercase text-xs">Official Hybrid Launch</span></div>
+                            <h2 className="text-3xl font-serif font-bold text-ministry-blue mb-4 leading-tight">{selectedBook.Title}</h2>
+                            <p className="text-gray-600 mb-6 leading-relaxed text-sm">Join us for the official launch. Preordering secures your copy and grants you exclusive access to the Launch Event.</p>
+                            <div className="bg-gray-50 border border-gray-100 p-6 rounded-sm mb-6 text-sm">
+                                <div className="flex justify-between items-center mb-8 gap-8 border-b border-gray-200 pb-4"><div><span className="block text-[10px] uppercase text-gray-400 font-bold tracking-widest mb-1">Date</span><span className="text-ministry-blue font-bold text-lg">{selectedBook.LaunchDate ? new Date(selectedBook.LaunchDate).toLocaleDateString('en-US', { weekday: 'short', month: 'long', day: 'numeric' }) : 'Date TBA'}</span></div><div className="text-right"><span className="block text-[10px] uppercase text-gray-400 font-bold tracking-widest mb-1">Time</span><span className="text-ministry-blue font-bold text-lg">{selectedBook.LaunchTime ? formatTimeWithAMPM(selectedBook.LaunchTime) : 'Time TBA'}</span></div></div>
+                                <div className="space-y-4"><div className="flex items-start"><span className="text-xl mr-3">🏛️</span><div><span className="block text-xs font-bold text-ministry-blue uppercase">Physical Experience</span><span className="text-sm text-gray-600 font-medium">{selectedBook.PhysicalVenue || 'Venue to be announced'}</span></div></div><div className="flex items-start"><span className="text-xl mr-3">💻</span><div><span className="block text-xs font-bold text-ministry-blue uppercase">Virtual Experience</span><span className="text-sm text-gray-600 font-medium">{selectedBook.VirtualPlatform || 'Details sent via email'}</span></div></div></div>
                             </div>
-                        </div>
-
-                        {/* === RIGHT SIDE (FORM) === */}
-                        {/* Added 'overflow-y-auto' here so only the form scrolls if needed */}
-                        <div className="w-full md:w-7/12 p-6 md:p-8 flex flex-col text-left overflow-y-auto custom-scrollbar">
-                            
-                            {/* Mobile-Only Image Banner (Optional, small version) */}
-                            <div className="md:hidden flex items-center gap-4 mb-6 border-b border-gray-100 pb-4">
-                                {selectedBook.CoverArt && <img src={getImageUrl(selectedBook.CoverArt)} alt="Cover" className="w-16 h-20 object-cover rounded shadow-sm" />}
-                                <div>
-                                    <span className="text-ministry-gold font-bold tracking-widest uppercase text-[10px]">Official Launch</span>
-                                    <h2 className="text-xl font-serif font-bold text-ministry-blue leading-tight">{selectedBook.Title}</h2>
-                                </div>
-                            </div>
-
-                            {/* Desktop Title (Hidden on Mobile to save space since we used the banner above) */}
-                            <div className="hidden md:block">
-                                <div className="inline-block border-b-2 border-ministry-gold pb-1 mb-2 w-max">
-                                    <span className="text-ministry-gold font-bold tracking-[0.2em] uppercase text-xs">Official Hybrid Launch</span>
-                                </div>
-                                <h2 className="text-2xl font-serif font-bold text-ministry-blue mb-2 leading-tight">{selectedBook.Title}</h2>
-                            </div>
-
-                            <p className="text-gray-600 mb-6 leading-relaxed text-xs md:text-sm">
-                                Preordering secures your copy and grants you exclusive access to the Launch Event.
-                            </p>
-
-                            {/* Event Details Box */}
-                            <div className="bg-gray-50 border border-gray-100 p-4 rounded-sm mb-6 text-xs">
-                                <div className="flex justify-between items-center mb-4 gap-4 border-b border-gray-200 pb-3">
-                                    <div><span className="block text-[10px] uppercase text-gray-400 font-bold tracking-widest mb-1">Date</span><span className="text-ministry-blue font-bold">{selectedBook.LaunchDate ? new Date(selectedBook.LaunchDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'TBA'}</span></div>
-                                    <div className="text-right"><span className="block text-[10px] uppercase text-gray-400 font-bold tracking-widest mb-1">Time</span><span className="text-ministry-blue font-bold">{selectedBook.LaunchTime ? formatTimeWithAMPM(selectedBook.LaunchTime) : 'TBA'}</span></div>
-                                </div>
-                                <div className="space-y-3">
-                                    <div className="flex items-start"><span className="text-lg mr-2">🏛️</span><div><span className="block text-[10px] font-bold text-ministry-blue uppercase">Physical</span><span className="text-xs text-gray-600 font-medium">{selectedBook.PhysicalVenue || 'Venue TBA'}</span></div></div>
-                                    <div className="flex items-start"><span className="text-lg mr-2">💻</span><div><span className="block text-[10px] font-bold text-ministry-blue uppercase">Virtual</span><span className="text-xs text-gray-600 font-medium">{selectedBook.VirtualPlatform || 'Sent via email'}</span></div></div>
-                                </div>
-                            </div>
-
-                            {/* === PAYMENT FORM SECTION === */}
-                            <div className="mt-auto border-t border-gray-100 pt-4">
-                                <div className="flex justify-between items-end mb-4">
-                                    <span className="text-xs text-gray-500 font-bold uppercase tracking-widest">Preorder Bundle</span>
-                                    <span className="text-ministry-gold font-bold text-xl">
-                                        {selectedBook.LocalPrices?.find(p => p.Currency === userCurrency)?.Amount 
-                                            ? formatCurrency(selectedBook.LocalPrices.find(p => p.Currency === userCurrency).Amount, userCurrency) 
-                                            : selectedBook.Price}
-                                    </span>
-                                </div>
-
-                                <div className="space-y-3 mb-4">
-                                    <input type="text" placeholder="Full Name" className="w-full p-3 border border-gray-300 rounded-sm text-sm focus:border-ministry-gold outline-none" value={preorderName} onChange={(e) => setPreorderName(e.target.value)} />
-                                    <input type="email" placeholder="Email Address" className="w-full p-3 border border-gray-300 rounded-sm text-sm focus:border-ministry-gold outline-none" value={preorderEmail} onChange={(e) => setPreorderEmail(e.target.value)} />
-                                </div>
-
-                                {/* Paystack Button */}
-                                <PaystackTrigger 
-                                    amount={selectedBook.LocalPrices?.find(p => p.Currency === 'NGN')?.Amount || 5000}
-                                    email={preorderEmail}
-                                    name={preorderName}
-                                    bookTitle={selectedBook.Title}
-                                    onSuccess={(reference) => {
-                                        setPreorderModalOpen(false);
-                                        setPreorderName('');
-                                        setPreorderEmail('');
-                                        alert("Order Successful! Ref: " + reference);
-                                    }}
-                                />
-                            </div>
-
+                            <div className="mt-auto"><div className="flex justify-between items-end mb-3"><span className="text-xs text-gray-500 font-bold uppercase tracking-widest">Preorder Bundle</span><span className="text-ministry-gold font-bold text-2xl">{selectedBook.LocalPrices?.find(p => p.Currency === userCurrency)?.Amount ? formatCurrency(selectedBook.LocalPrices.find(p => p.Currency === userCurrency).Amount, userCurrency) : selectedBook.Price}</span></div><a href={selectedBook.BuyLink} target="_blank" rel="noreferrer" className="block w-full text-center bg-ministry-gold text-white py-4 font-bold uppercase tracking-widest hover:bg-ministry-blue hover:scale-[1.02] transition-all shadow-lg rounded-sm">Secure Seat & Copy (Paystack)</a></div>
                         </div>
                     </div>
                 </div>
