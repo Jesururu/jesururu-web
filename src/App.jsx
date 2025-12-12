@@ -84,6 +84,9 @@ function App() {
     const [adminFormData, setAdminFormData] = useState({
         activeTab: 'gatekeeper',
         select: 'Staff',
+        username: '',
+        password: '',
+        selectedRole: 'gatekeeper',
         targetId: '',
         targetType: 'event',
         ministerName: '',
@@ -110,7 +113,7 @@ function App() {
     const scrollInterval = useRef(null);
 
     const heroImages = [
-      "/images/slide1.jpg", "/images/slide2.jpg", "/images/slide3.jpg",
+      "/images/slide1.jpg", "/images/slide2.jpg", "/images/slide3.jpg", "/images/slide5.jpg",
       "/images/slide4.jpg", "/images/slide8.jpg", "/images/slide6.jpg", "/images/slide7.jpg",
     ];
 
@@ -378,22 +381,101 @@ function App() {
     
     const verifyTicket = async (codeToCheck) => {
         if (!codeToCheck) return;
-        if (!adminUser || !adminUser.token) { setCheckInStatus('error'); setCheckInMessage('Session Expired. Please Re-login.'); return; }
-        setCheckInStatus('loading'); setCheckInMessage('Verifying ticket...'); setScannedGuest(null); setCameraActive(false);
+        
+        // 1. Session Check
+        if (!adminUser || !adminUser.token) { 
+            setCheckInStatus('error'); 
+            setCheckInMessage('Session Expired. Please Re-login.'); 
+            return; 
+        }
+
+        // 2. Initial UI State
+        setCheckInStatus('loading');
+        setCheckInMessage('Verifying ticket...'); 
+        setScannedGuest(null); 
+        setCameraActive(false);
+
         const cleanCode = codeToCheck.trim();
+
         try {
-            const searchUrl = `${STRAPI_URL}/api/registrations?filters[ticketCode][$eq]=${cleanCode}&publicationState=preview`;
+            // 3. API Call (MUST have populate=* to get the photo)
+            const searchUrl = `${STRAPI_URL}/api/registrations?filters[ticketCode][$eq]=${cleanCode}&publicationState=preview&populate=attendeePhoto`;
             const res = await axios.get(searchUrl, { headers: { Authorization: `Bearer ${adminUser.token}` } });
-            if (res.data.data.length === 0) { setCheckInStatus('error'); setCheckInMessage('❌ TICKET NOT FOUND'); return; }
+
+            // 4. Handle "Ticket Not Found"
+            if (res.data.data.length === 0) { 
+                setCheckInStatus('error'); 
+                setCheckInMessage('❌ TICKET NOT FOUND'); 
+                return; 
+            }
+
+            // 5. Get Data
             const guestRecord = res.data.data[0];
             const guestData = guestRecord.attributes || guestRecord;
+
+            // =========================================================
+            // 🕵️‍♂️ THE X-RAY: LOOK AT YOUR CONSOLE WHEN SCANNING
+            // =========================================================
+            console.log("-----------------------------------------");
+            console.log("📸 FULL API RESPONSE:", guestData);
+            console.log("🔎 Looking for 'attendeePhoto'...", guestData.attendeePhoto);
+            console.log("-----------------------------------------");
+
+            // === NEW: ROBUST PHOTO EXTRACTION (Handles Strapi v4 & v5) ===
+            let photoUrl = null;
+            const photoObj = guestData.attendeePhoto;
+
+            if (photoObj) {
+                // CASE 1: Strapi v5 (Flat Structure - Most likely what you have)
+                // The object has the 'url' directly inside it
+                if (photoObj.url) {
+                    photoUrl = photoObj.url.startsWith('http') 
+                        ? photoObj.url 
+                        : `${STRAPI_URL}${photoObj.url}`;
+                }
+                // CASE 2: Strapi v4 (Nested Structure - The old way)
+                // The object is wrapped inside 'data.attributes'
+                else if (photoObj.data && photoObj.data.attributes) {
+                     photoUrl = getImageUrl({ data: photoObj.data });
+                }
+            }
+
+            console.log("📸 Scanner Found Photo URL:", photoUrl); // Check Console to confirm
+
+            // 7. Merge Data (Old Data + New Photo Link)
+            const finalGuestData = { 
+                ...guestData, 
+                photoUrl: photoUrl 
+            };
+
             const updateId = guestRecord.documentId || guestRecord.id;
             const legacyId = guestRecord.id;
-            if (guestData.isCheckedIn) { setCheckInStatus('warning'); setCheckInMessage(`⚠️ ALREADY SCANNED!`); setScannedGuest(guestData); return; }
+
+            // 8. Logic: Is Guest Already Checked In?
+            if (guestData.isCheckedIn) { 
+                setCheckInStatus('warning'); 
+                setCheckInMessage(`⚠️ ALREADY SCANNED!`); 
+                setScannedGuest(finalGuestData); // Pass the data WITH photo
+                return; 
+            }
+
+            // 9. Check In the Guest (Update Server)
             await axios.put(`${STRAPI_URL}/api/registrations/${updateId}`, { data: { isCheckedIn: true } }, { headers: { Authorization: `Bearer ${adminUser.token}` } });
+            
+            // 10. Update Local List
             setAllRegistrations(prev => prev.map(reg => reg.id === legacyId ? { ...reg, isCheckedIn: true } : reg));
-            setCheckInStatus('success'); setCheckInMessage('✅ ACCESS GRANTED'); setScannedGuest(guestData); setCheckInCode('');
-        } catch (error) { console.error("Gatekeeper Error:", error); setCheckInStatus('error'); setCheckInMessage('System Error: Check Network'); }
+            
+            // 11. Final Success State
+            setCheckInStatus('success'); 
+            setCheckInMessage('✅ ACCESS GRANTED'); 
+            setScannedGuest(finalGuestData); // Pass the data WITH photo
+            setCheckInCode('');
+
+        } catch (error) { 
+            console.error("Gatekeeper Error:", error); 
+            setCheckInStatus('error'); 
+            setCheckInMessage('System Error: Check Network'); 
+        }
     };
     const handleScan = (scannedRawValue) => { if (scannedRawValue) { setCheckInCode(scannedRawValue); verifyTicket(scannedRawValue); } };
     const handleManualSubmit = (e) => { e.preventDefault(); verifyTicket(checkInCode); };
@@ -503,18 +585,126 @@ function App() {
             const newMember = { Name: adminFormData.ministerName, Role: adminFormData.ministerRole, Bio: adminFormData.ministerBio, Photo: photoId };
             await axios.put(`${STRAPI_URL}/api/${collection}/${adminFormData.targetId}`, { data: { [fieldName]: [...cleanTeam, newMember] } }, { headers: { Authorization: `Bearer ${adminUser.token}` } });
             alert("Minister Added Successfully!"); setAdminFormData({ ...adminFormData, ministerName: '', ministerRole: '', ministerBio: '', ministerPhoto: null }); window.location.reload();
-        } catch (error) { alert("Failed to save team member details."); }
+        } catch (error) { console.log(error); alert("Failed to save team member details."); }
     };
     const handleAdminInput = (e) => { const { name, value } = e.target; if (name === 'ministerName' || name === 'ministerRole') { const formatted = value.toLowerCase().split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' '); setAdminFormData(prev => ({ ...prev, [name]: formatted })); } else { setAdminFormData(prev => ({ ...prev, [name]: value })); } };
 
     const handleEventClick = (eventItem) => { setTicketSnapshot({ date: eventItem.EventDateTime, venue: eventItem.Venue }); setSelectedEvent(eventItem); setIsRegistering(eventItem.isBook); setEventModalOpen(true); };
     const handleRegistrationInput = (e) => { const { name, value } = e.target; if (name === 'name') { const formattedValue = value.toLowerCase().split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' '); setRegistrationData(prev => ({ ...prev, [name]: formattedValue })); } else if (name === 'email') { setRegistrationData(prev => ({ ...prev, [name]: value.toLowerCase() })); } else { setRegistrationData(prev => ({ ...prev, [name]: value })); } };
+
     const handleEventRegistrationSubmit = async (e) => {
-        e.preventDefault(); if (!selectedEvent) return; setIsSubmitting(true);
-        const formattedName = registrationData.name; const ticketCode = generateTicketCode();
-        const payload = { fullName: formattedName, emailAddress: registrationData.email.toLowerCase().trim(), phoneNumber: registrationData.phone, attendanceType: registrationData.attendanceType, eventTitle: selectedEvent.Title, ticketCode: ticketCode, };
-        if (!selectedEvent.isBook) payload.event = selectedEvent.documentId || selectedEvent.id;
-        try { await axios.post(`${STRAPI_URL}/api/registrations`, { data: payload }); setIsSubmitting(false); setSuccessData({ name: formattedName, ticket: ticketCode, whatsAppLink: selectedEvent.WhatsAppLink || (selectedEvent.attributes && selectedEvent.attributes.WhatsAppLink), date: ticketSnapshot.date || "TBA", venue: ticketSnapshot.venue || "TBA" }); setAllRegistrations(prev => [...prev, { ...payload, fullName: formattedName, id: Date.now() }]); setRegistrationData({ name: '', email: '', phone: '', attendanceType: 'Physical' }); } catch (error) { setIsSubmitting(false); alert("Registration failed. Please check connection."); }
+        e.preventDefault();
+        if (!selectedEvent) return;
+
+        // --- 1. GET FILE & VALIDATE ---
+        // We look for the input with name="photo" inside the form
+        const form = e.target;
+        const fileInput = form.querySelector('input[name="photo"]');
+        const file = fileInput?.files?.[0];
+
+        if (!file) {
+        alert("Please select a photo first! 📸");
+        return;
+        }
+
+        setIsSubmitting(true);
+
+        try {
+        // ======================================================
+        // STEP 1: UPLOAD THE PHOTO (The "Simple" Upload)
+        // ======================================================
+        console.log("📤 Step 1: Uploading Photo...");
+        
+        const uploadData = new FormData();
+        uploadData.append('files', file); // Standard Strapi upload key
+
+        // Use fetch for the upload part (most reliable for files)
+        const uploadRes = await fetch(`${STRAPI_URL}/api/upload`, {
+            method: 'POST',
+            body: uploadData,
+        });
+
+        if (!uploadRes.ok) {
+            throw new Error("Photo upload failed. Check server limits.");
+        }
+
+        const uploadResult = await uploadRes.json();
+        const photoId = uploadResult[0].id; // We got the ID! (e.g., 21)
+        
+        console.log("✅ Photo Uploaded! ID:", photoId);
+
+        // ======================================================
+        // STEP 2: REGISTER THE USER (The "JSON" Registration)
+        // ======================================================
+        console.log("📝 Step 2: Creating Registration...");
+
+        // Helper to format name (john doe -> John Doe)
+        const toTitleCase = (str) => str ? str.toLowerCase().split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') : "";
+        
+        const formattedName = toTitleCase(registrationData.name);
+        const ticketCode = generateTicketCode(); // Ensure this helper exists in your code
+
+        // Standard JSON Payload (Matches your Strapi fields exactly)
+        const registrationPayload = {
+            data: {
+            fullName: formattedName,
+            emailAddress: registrationData.email.toLowerCase().trim(),
+            phoneNumber: registrationData.phone,
+            attendanceType: registrationData.attendanceType || 'Physical',
+            ticketCode: ticketCode,
+            eventTitle: selectedEvent.Title,
+            isCheckedIn: false,
+            
+            // LINK THE EVENT (Relation ID) - Only if NOT the book launch
+            ...(selectedEvent.isBook ? {} : { event: selectedEvent.documentId || selectedEvent.id }),
+            
+            // LINK THE PHOTO (Relation ID) - Linking the photo we just uploaded
+            attendeePhoto: photoId
+            }
+        };
+
+        // Send Registration Data
+        const registerRes = await axios.post(`${STRAPI_URL}/api/registrations`, registrationPayload);
+
+        // ======================================================
+        // STEP 3: SUCCESS & TICKET GENERATION (Crucial Part)
+        // ======================================================
+        console.log("🎉 Registration Complete:", registerRes.data);
+        
+        setIsSubmitting(false);
+
+        // A. Populate the Ticket Data for the Success Modal
+        setSuccessData({
+            name: formattedName,
+            ticket: ticketCode,
+            // Get WhatsApp Link safely
+            whatsAppLink: selectedEvent.WhatsAppLink || (selectedEvent.attributes && selectedEvent.attributes.WhatsAppLink),
+            // Get Date and Venue safely
+            date: ticketSnapshot.date || "TBA",
+            venue: ticketSnapshot.venue || "TBA"
+        });
+
+        // B. Update Local List (Optimistic UI update)
+        setAllRegistrations(prev => [...prev, { ...registrationPayload.data, id: Date.now() }]);
+        
+        // C. Reset Form Fields
+        setRegistrationData({ name: '', email: '', phone: '', attendanceType: 'Physical' });        
+        
+        setIsRegistering(false);
+
+        } catch (error) {
+        setIsSubmitting(false);
+        console.error("Submission Failed:", error);
+        
+        // Smart Error Handling
+        let msg = error.response?.data?.error?.message || error.message;
+        
+        if (msg.includes("unique")) {
+            alert("This email is already registered!");
+        } else {
+            alert(`Failed: ${msg}`);
+        }
+        }
     };
     const handleBooking = async (e) => { e.preventDefault(); setFormStatus('sending'); try { await axios.post(`${STRAPI_URL}/api/bookings`, { data: { Name: formData.name, ChurchName: formData.churchName, Email: formData.email, Message: formData.message } }); setFormStatus('success'); setTimeout(() => { setShowModal(false); setFormStatus(''); setFormData({ name: '', churchName: '', email: '', message: '' }); }, 2000); } catch { setFormStatus('error'); } };
     const handlePurchaseClick = (book) => { const normalizedBook = { ...book, PurchaseLinks: book.purchaseLinks || book.PurchaseLinks || [] }; setSelectedBook(normalizedBook); setPurchaseModalOpen(true); };
@@ -764,60 +954,76 @@ function App() {
         );
     }
 
-    if (showAdminDashboard && adminUser) {
+    if(showAdminDashboard && adminUser){
         return (
-            <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/95 backdrop-blur-sm p-2 md:p-4 animate-fade-in">
-                <div className="bg-white w-full max-w-4xl rounded-sm shadow-2xl relative flex flex-col max-h-[95vh] md:max-h-[90vh] overflow-hidden">
+            /* FIX 1: p-0 on mobile (Full Screen), p-4 on Desktop */
+            <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/95 backdrop-blur-sm p-0 md:p-4 animate-fade-in">
+                
+                {/* FIX 2: h-full on mobile, rounded-none on mobile */}
+                <div className="bg-white w-full h-full md:h-auto md:max-w-4xl rounded-none md:rounded-sm shadow-2xl relative flex flex-col md:max-h-[90vh] overflow-hidden">
+                    
+                    {/* Header */}
                     <div className="bg-ministry-blue text-white p-4 flex flex-col md:flex-row justify-between items-center gap-4 flex-shrink-0 z-20 shadow-md">
                         <div className="text-center md:text-left w-full md:w-auto flex justify-between items-center">
-                            <div><h3 className="font-bold text-lg leading-none">Admin Console</h3><p className="text-[10px] text-white/60 uppercase tracking-widest mt-1">Logged in as {adminUser.username}</p></div>
-                            <button onClick={() => setShowAdminDashboard(false)} className="md:hidden text-white/50 hover:text-white text-2xl font-bold">✕</button>
+                            <div>
+                                <h3 className="font-bold text-lg leading-none">Admin Console</h3>
+                                <p className="text-[10px] text-white/60 uppercase tracking-widest mt-1">Logged in as {adminUser.username}</p>
+                            </div>
+                            <button onClick={() => setShowAdminDashboard(false)} className="md:hidden text-white/50 hover:text-white text-2xl font-bold p-2">✕</button>
                         </div>
-                        {/* === ADMIN TABS (Dynamic Permissions) === */}
-                        <div className="flex w-full md:w-auto gap-2">
+                        
+                        {/* === ADMIN TABS (FIX 3: Scrollable on Mobile) === */}
+                        {/* Added: overflow-x-auto, whitespace-nowrap, no-scrollbar */}
+                        <div className="flex w-full md:w-auto gap-2 overflow-x-auto whitespace-nowrap pb-1 custom-scrollbar">
                             
-                            {/* 1. SCANNER (Visible to EVERYONE who logs in) */}
+                            {/* 1. SCANNER */}
                             <button 
                                 onClick={() => setAdminFormData({...adminFormData, activeTab: 'gatekeeper'})} 
-                                className={`flex-1 md:flex-none px-3 py-2 rounded text-[10px] md:text-xs font-bold uppercase tracking-widest border border-white/20 transition ${adminFormData.activeTab === 'gatekeeper' ? 'bg-ministry-gold text-ministry-blue border-ministry-gold' : 'hover:bg-white/10'}`}
+                                className={`flex-shrink-0 px-4 py-2 rounded text-[10px] md:text-xs font-bold uppercase tracking-widest border border-white/20 transition ${adminFormData.activeTab === 'gatekeeper' ? 'bg-ministry-gold text-ministry-blue border-ministry-gold' : 'hover:bg-white/10'}`}
                             >
                                 Scanner
                             </button>
 
-                            {/* 2. QUOTES & TEAM (Strictly for SUPER ADMINS only) */}
+                            {/* 2. QUOTES & TEAM */}
                             {SUPER_ADMINS.includes(adminUser.email) && (
                                 <>
                                     <button 
                                         onClick={() => setAdminFormData({...adminFormData, activeTab: 'quotes'})} 
-                                        className={`flex-1 md:flex-none px-3 py-2 rounded text-[10px] md:text-xs font-bold uppercase tracking-widest border border-white/20 transition ${adminFormData.activeTab === 'quotes' ? 'bg-ministry-gold text-ministry-blue border-ministry-gold' : 'hover:bg-white/10'}`}
+                                        className={`flex-shrink-0 px-4 py-2 rounded text-[10px] md:text-xs font-bold uppercase tracking-widest border border-white/20 transition ${adminFormData.activeTab === 'quotes' ? 'bg-ministry-gold text-ministry-blue border-ministry-gold' : 'hover:bg-white/10'}`}
                                     >
                                         Quotes
                                     </button>
                                     <button 
                                         onClick={() => setAdminFormData({...adminFormData, activeTab: 'team'})} 
-                                        className={`flex-1 md:flex-none px-3 py-2 rounded text-[10px] md:text-xs font-bold uppercase tracking-widest border border-white/20 transition ${adminFormData.activeTab === 'team' ? 'bg-ministry-gold text-ministry-blue border-ministry-gold' : 'hover:bg-white/10'}`}
+                                        className={`flex-shrink-0 px-4 py-2 rounded text-[10px] md:text-xs font-bold uppercase tracking-widest border border-white/20 transition ${adminFormData.activeTab === 'team' ? 'bg-ministry-gold text-ministry-blue border-ministry-gold' : 'hover:bg-white/10'}`}
                                     >
                                         Team
                                     </button>
                                 </>
                             )}
 
-                            {/* 3. DEVOTIONALS (Visible to YOU and ASSISTANT) */}
+                            {/* 3. DEVOTIONALS */}
                             {(SUPER_ADMINS.includes(adminUser.email) || CONTENT_EDITORS.includes(adminUser.email)) && (
                                 <button 
                                     onClick={() => setAdminFormData({...adminFormData, activeTab: 'devotionals'})} 
-                                    className={`flex-1 md:flex-none px-3 py-2 rounded text-[10px] md:text-xs font-bold uppercase tracking-widest border border-white/20 transition ${adminFormData.activeTab === 'devotionals' ? 'bg-ministry-gold text-ministry-blue border-ministry-gold' : 'hover:bg-white/10'}`}
+                                    className={`flex-shrink-0 px-4 py-2 rounded text-[10px] md:text-xs font-bold uppercase tracking-widest border border-white/20 transition ${adminFormData.activeTab === 'devotionals' ? 'bg-ministry-gold text-ministry-blue border-ministry-gold' : 'hover:bg-white/10'}`}
                                 >
                                     Devotionals
                                 </button>
                             )}
                             
                             {/* LOGOUT */}
-                            <button onClick={() => { setAdminUser(null); setShowAdminDashboard(false); }} className="bg-red-600 px-3 py-2 rounded text-[10px] md:text-xs font-bold uppercase tracking-widest hover:bg-red-700">Logout</button>
+                            <button onClick={() => { setAdminUser(null); setShowAdminDashboard(false); }} className="flex-shrink-0 bg-red-600 px-4 py-2 rounded text-[10px] md:text-xs font-bold uppercase tracking-widest hover:bg-red-700 ml-auto md:ml-0">Logout</button>
                         </div>
+                        
+                        {/* Desktop Close Button */}
                         <button onClick={() => setShowAdminDashboard(false)} className="hidden md:block text-white/50 hover:text-white text-2xl font-bold">✕</button>
                     </div>
-                    <div className="p-4 md:p-8 overflow-y-auto custom-scrollbar bg-gray-50 flex-1">
+
+                    {/* Content Area */}
+                    <div className="p-4 md:p-8 overflow-y-auto custom-scrollbar bg-gray-50 flex-1 pb-20 md:pb-8">
+                        
+                        {/* === GATEKEEPER TAB === */}
                         {adminFormData.activeTab === 'gatekeeper' && (
                             <div className="flex flex-col items-center max-w-lg mx-auto text-center h-full">
                                 <h3 className="text-xl font-bold mb-4 text-gray-700 uppercase tracking-widest">Ticket Gate</h3>
@@ -826,12 +1032,32 @@ function App() {
                                         <div className={`text-4xl md:text-6xl md:mb-2 ${!checkInStatus && 'opacity-20'}`}>{checkInStatus === 'success' ? '✅' : checkInStatus === 'error' ? '⛔' : checkInStatus === 'warning' ? '⚠️' : '📷'}</div>
                                         <h2 className={`text-lg md:text-2xl font-black uppercase tracking-widest ${checkInStatus === 'success' ? 'text-green-600' : checkInStatus === 'error' ? 'text-red-600' : checkInStatus === 'warning' ? 'text-orange-600' : 'text-gray-400'}`}>{checkInMessage || 'Ready'}</h2>
                                     </div>
-                                    {scannedGuest && (<div className="mt-3 pt-3 border-t border-gray-200/50 text-left md:text-center"><p className="text-lg font-bold text-gray-800 leading-tight">{scannedGuest.fullName}</p><p className="text-[10px] text-gray-500 uppercase tracking-widest">{scannedGuest.attendanceType} Attendee</p></div>)}
+                                    
+                                    {/* SCANNER RESULT */}
+                                    {scannedGuest && (
+                                        <div className={`mt-6 p-6 rounded-sm shadow-2xl animate-fade-in text-center ${scannedGuest.isCheckedIn ? 'bg-green-50 border-2 border-green-500' : 'bg-white border border-gray-200'}`}>
+                                            <div className="w-32 h-32 md:w-40 md:h-40 mx-auto mb-4 rounded-full border-4 border-white shadow-xl overflow-hidden bg-gray-200 relative">
+                                                {scannedGuest.photoUrl ? (
+                                                    <img src={scannedGuest.photoUrl} alt="Attendee" className="w-full h-full object-cover" />
+                                                ) : (
+                                                    <div className="flex items-center justify-center w-full h-full text-5xl text-gray-400">👤</div>
+                                                )}
+                                            </div>
+                                            <span className={`inline-block px-4 py-1 rounded-full text-xs font-bold uppercase tracking-widest mb-3 ${scannedGuest.isCheckedIn ? 'bg-green-200 text-green-800' : 'bg-blue-100 text-blue-800'}`}>
+                                                {scannedGuest.isCheckedIn ? 'Access Granted' : 'Ticket Valid'}
+                                            </span>
+                                            <h3 className="text-xl md:text-2xl font-serif font-bold text-gray-800 mb-1 leading-tight">{scannedGuest.fullName}</h3>
+                                            <p className="text-sm font-bold uppercase tracking-widest text-gray-400 mb-6">{scannedGuest.attendanceType || scannedGuest.attendeeType} Ticket</p>
+                                            <button onClick={() => setScannedGuest(null)} className="w-full bg-ministry-blue text-white py-3 font-bold uppercase tracking-widest hover:bg-ministry-gold hover:text-ministry-blue transition rounded-sm shadow-lg">Scan Next Person</button>
+                                        </div>
+                                    )}
                                 </div>
                                 {cameraActive && (<div className="w-full mb-6 bg-black rounded-lg overflow-hidden relative h-56 md:h-64 border-4 border-ministry-gold shadow-2xl"><Scanner onScan={(result) => { if (result && result.length > 0) handleScan(result[0].rawValue); }} components={{ audio: false, onOff: false }} styles={{ container: { height: '100%' }, video: { objectFit: 'cover' } }} /><button onClick={() => setCameraActive(false)} className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-red-600 text-white px-4 py-2 rounded-full text-[10px] font-bold uppercase tracking-widest shadow-lg z-20 whitespace-nowrap">Stop Camera</button></div>)}
                                 {!cameraActive && (<form onSubmit={handleManualSubmit} className="relative w-full"><input autoFocus type="text" placeholder="Enter Ticket ID manually..." className="w-full p-4 pl-4 pr-14 text-base border-2 border-ministry-blue rounded-sm focus:outline-none focus:border-ministry-gold shadow-sm bg-white" value={checkInCode} onChange={(e) => setCheckInCode(e.target.value)} /><button type="button" onClick={() => setCameraActive(true)} className="absolute right-2 top-1/2 -translate-y-1/2 bg-gray-100 p-2 rounded-sm text-xl hover:bg-ministry-gold hover:text-white transition border border-gray-200" title="Open Camera">📷</button></form>)}
                             </div>
                         )}
+
+                        {/* === TEAM TAB === */}
                         {adminFormData.activeTab === 'team' && (
                             <div className="bg-white p-4 md:p-8 rounded shadow-lg">
                                 <h3 className="text-lg md:text-xl font-bold mb-6 text-gray-700 uppercase tracking-widest border-b pb-2">Add Team Member</h3>
@@ -845,6 +1071,8 @@ function App() {
                                 </form>
                             </div>
                         )}
+
+                        {/* === QUOTES TAB === */}
                         {adminFormData.activeTab === 'quotes' && (
                             <div className="bg-white p-4 md:p-8 rounded shadow-lg max-w-3xl mx-auto flex flex-col md:flex-row gap-8">
                                 <div className="w-full md:w-5/12">
@@ -863,100 +1091,46 @@ function App() {
                                 </div>
                             </div>
                         )}
+
                         {/* === DEVOTIONALS TAB === */}
                         {adminFormData.activeTab === 'devotionals' && (
                             <div className="bg-white p-4 md:p-8 rounded shadow-lg max-w-2xl mx-auto">
-                                <h3 className="text-lg md:text-xl font-bold mb-6 text-gray-700 uppercase tracking-widest border-b pb-2">
-                                    Upload Daily Word
-                                </h3>
-                                
+                                <h3 className="text-lg md:text-xl font-bold mb-6 text-gray-700 uppercase tracking-widest border-b pb-2">Upload Daily Word</h3>
                                 <form onSubmit={handlePostDevotional} className="space-y-5">
-                                    
-                                    {/* Title & Date */}
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <div>
-                                            <label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Title</label>
-                                            <input name="title" type="text" placeholder="e.g. The Architecture of Faith" required className="w-full p-3 border border-gray-300 focus:border-ministry-gold outline-none text-sm rounded-sm" />
-                                        </div>
-                                        <div>
-                                            <label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Date</label>
-                                            <input name="date" type="date" required defaultValue={new Date().toISOString().split('T')[0]} className="w-full p-3 border border-gray-300 focus:border-ministry-gold outline-none text-sm rounded-sm uppercase" />
-                                        </div>
+                                        <div><label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Title</label><input name="title" type="text" placeholder="e.g. The Architecture of Faith" required className="w-full p-3 border border-gray-300 focus:border-ministry-gold outline-none text-sm rounded-sm" /></div>
+                                        <div><label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Date</label><input name="date" type="date" required defaultValue={new Date().toISOString().split('T')[0]} className="w-full p-3 border border-gray-300 focus:border-ministry-gold outline-none text-sm rounded-sm uppercase" /></div>
                                     </div>
-
-                                    {/* Category & Scripture */}
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         <div>
                                             <label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Category</label>
                                             <select name="category" className="w-full p-3 border border-gray-300 focus:border-ministry-gold outline-none text-sm rounded-sm bg-white">
-                                                <option value="Wisdom">Wisdom</option>
-                                                <option value="Warfare">Warfare</option>
-                                                <option value="Family">Family</option>
-                                                <option value="Ministry">Ministry</option>
-                                                <option value="Finance">Finance</option>
-                                                <option value="Prophetic">Prophetic</option>
+                                                <option value="Wisdom">Wisdom</option><option value="Warfare">Warfare</option><option value="Family">Family</option><option value="Ministry">Ministry</option><option value="Finance">Finance</option><option value="Prophetic">Prophetic</option>
                                             </select>
                                         </div>
-                                        <div>
-                                            <label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Scripture Reference</label>
-                                            <input name="scripture" type="text" placeholder="e.g. Hebrews 11:1" required className="w-full p-3 border border-gray-300 focus:border-ministry-gold outline-none text-sm rounded-sm" />
-                                        </div>
-                                        <div>
-                                            <label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Bible In One Year</label>
-                                            <input name="biblePlan" type="text" placeholder="Gen 1-3, Matt 1" className="w-full p-3 border border-gray-300 focus:border-ministry-gold outline-none text-sm rounded-sm" />
-                                        </div>
+                                        <div><label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Scripture Reference</label><input name="scripture" type="text" placeholder="e.g. Hebrews 11:1" required className="w-full p-3 border border-gray-300 focus:border-ministry-gold outline-none text-sm rounded-sm" /></div>
+                                        <div><label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Bible In One Year</label><input name="biblePlan" type="text" placeholder="Gen 1-3, Matt 1" className="w-full p-3 border border-gray-300 focus:border-ministry-gold outline-none text-sm rounded-sm" /></div>
                                     </div>
-                                    {/* The Body */}
                                     <div>
                                         <label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Message Body</label>
-                                        <textarea 
-                                            name="body" 
-                                            rows="8" 
-                                            placeholder="Type the devotional content here..." 
-                                            required 
-                                            className="w-full p-3 border border-gray-300 focus:border-ministry-gold outline-none text-sm rounded-sm leading-relaxed"
-                                        ></textarea>
+                                        <textarea name="body" rows="8" placeholder="Type the devotional content here..." required className="w-full p-3 border border-gray-300 focus:border-ministry-gold outline-none text-sm rounded-sm leading-relaxed"></textarea>
                                         <p className="text-[10px] text-gray-400 mt-1">* Tips: Use double 'Enter' for new paragraphs.</p>
                                     </div>
-                                    {/* --- QUIZ SECTION --- */}
                                     <div className="bg-gray-50 p-4 rounded border border-gray-200 mt-4">
                                         <h4 className="text-[10px] font-bold uppercase text-gray-500 mb-3 border-b border-gray-200 pb-1">Engagement (Optional)</h4>
-                                        
                                         <div className="grid grid-cols-2 gap-4 mb-4">
-                                            <div>
-                                                <label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Day Number</label>
-                                                <input name="bibleDay" type="number" placeholder="e.g. 245" className="w-full p-2 text-sm border border-gray-300 rounded-sm" />
-                                            </div>
-                                            <div>
-                                                <label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Assignment</label>
-                                                <input name="assignment" type="text" placeholder="e.g. Call a friend..." className="w-full p-2 text-sm border border-gray-300 rounded-sm" />
-                                            </div>
+                                            <div><label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Day Number</label><input name="bibleDay" type="number" placeholder="e.g. 245" className="w-full p-2 text-sm border border-gray-300 rounded-sm" /></div>
+                                            <div><label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Assignment</label><input name="assignment" type="text" placeholder="e.g. Call a friend..." className="w-full p-2 text-sm border border-gray-300 rounded-sm" /></div>
                                         </div>
-
                                         <div>
-                                            <label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Quiz Question</label>
-                                            <input name="quizQuestion" type="text" placeholder="Question..." className="w-full p-2 text-sm border border-gray-300 rounded-sm mb-2" />
-                                            
+                                            <label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Quiz Question</label><input name="quizQuestion" type="text" placeholder="Question..." className="w-full p-2 text-sm border border-gray-300 rounded-sm mb-2" />
                                             <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                                                <input name="quizA" type="text" placeholder="Option A" className="p-2 text-sm border border-gray-300 rounded-sm" />
-                                                <input name="quizB" type="text" placeholder="Option B" className="p-2 text-sm border border-gray-300 rounded-sm" />
-                                                <input name="quizC" type="text" placeholder="Option C" className="p-2 text-sm border border-gray-300 rounded-sm" />
+                                                <input name="quizA" type="text" placeholder="Option A" className="p-2 text-sm border border-gray-300 rounded-sm" /><input name="quizB" type="text" placeholder="Option B" className="p-2 text-sm border border-gray-300 rounded-sm" /><input name="quizC" type="text" placeholder="Option C" className="p-2 text-sm border border-gray-300 rounded-sm" />
                                             </div>
-                                            
-                                            <div className="mt-2">
-                                                <label className="text-[10px] font-bold uppercase text-gray-400 mr-2">Correct Answer:</label>
-                                                <select name="correctOption" className="p-1 border border-gray-300 rounded-sm text-sm">
-                                                    <option value="A">Option A</option>
-                                                    <option value="B">Option B</option>
-                                                    <option value="C">Option C</option>
-                                                </select>
-                                            </div>
+                                            <div className="mt-2"><label className="text-[10px] font-bold uppercase text-gray-400 mr-2">Correct Answer:</label><select name="correctOption" className="p-1 border border-gray-300 rounded-sm text-sm"><option value="A">Option A</option><option value="B">Option B</option><option value="C">Option C</option></select></div>
                                         </div>
                                     </div> 
-                                    {/* Submit */}
-                                    <button className="w-full bg-ministry-blue text-white py-4 font-bold uppercase tracking-widest hover:bg-ministry-gold hover:text-ministry-blue transition shadow-lg text-sm rounded-sm">
-                                        Publish Entry
-                                    </button>
+                                    <button className="w-full bg-ministry-blue text-white py-4 font-bold uppercase tracking-widest hover:bg-ministry-gold hover:text-ministry-blue transition shadow-lg text-sm rounded-sm">Publish Entry</button>
                                 </form>
                             </div>
                         )}
@@ -965,6 +1139,7 @@ function App() {
             </div>
         );
     }
+    
     return (
         <div className="w-full overflow-x-hidden font-sans text-gray-800">
             <GlobalStyles />
@@ -1685,83 +1860,160 @@ function App() {
             {eventModalOpen && selectedEvent && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4 animate-fade-in overflow-y-auto">
                     <div className="bg-white w-full max-w-2xl rounded-sm shadow-2xl relative my-8">
-                        <button className={`absolute top-4 right-4 text-xl font-bold z-50 transition-colors ${isRegistering ? 'text-white/50 hover:text-white' : 'text-gray-400 hover:text-red-500'}`} onClick={() => { setEventModalOpen(false); setSuccessData(null); setIsRegistering(false); }}>✕</button>
+                        
+                        {/* Main Close Button */}
+                        <button 
+                            className={`absolute top-4 right-4 text-xl font-bold z-50 transition-colors ${isRegistering ? 'text-white/50 hover:text-white' : 'text-gray-400 hover:text-red-500'}`} 
+                            onClick={() => { setEventModalOpen(false); setSuccessData(null); setIsRegistering(false); }}
+                        >
+                            ✕
+                        </button>
+
+                        {/* === CONDITION 1: SHOW SUCCESS TICKET === */}
                         {successData ? (
                             <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/95 backdrop-blur-md p-4 animate-fade-in">
                                 <div className="w-full max-w-md relative">
                                     <button onClick={() => { setSuccessData(null); setEventModalOpen(false); }} className="absolute -top-12 right-0 text-white/50 hover:text-white font-bold z-10 no-print flex items-center gap-2"><span className="text-xs uppercase tracking-widest">Close</span> ✕</button>
+                                    
+                                    {/* Printable Ticket Area */}
                                     <div id="printable-ticket" className="bg-slate-900 w-full rounded-xl overflow-hidden shadow-2xl relative border border-white/10 text-white">
-                                        <div className="relative h-52 w-full bg-black">{selectedEvent.Poster ? (<div className="w-full h-full relative"><div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/40 to-transparent z-10"></div><img src={getImageUrl(selectedEvent.Poster)} alt="Event" className="w-full h-full object-cover opacity-80" /></div>) : (<div className="w-full h-full bg-ministry-gold/20 flex items-center justify-center"><span className="text-4xl opacity-20">🎟️</span></div>)}<div className="absolute bottom-0 left-0 w-full p-6 z-20"><span className="bg-ministry-gold text-ministry-blue text-[10px] font-bold px-2 py-1 rounded-sm uppercase tracking-widest shadow-md">Official Access Pass</span><h2 className="text-2xl font-serif font-bold text-white mt-2 leading-tight drop-shadow-md">{selectedEvent.Title}</h2></div></div>
+                                        <div className="relative h-52 w-full bg-black">
+                                            {selectedEvent.Poster ? (<div className="w-full h-full relative"><div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/40 to-transparent z-10"></div><img src={getImageUrl(selectedEvent.Poster)} alt="Event" className="w-full h-full object-cover opacity-80" /></div>) : (<div className="w-full h-full bg-ministry-gold/20 flex items-center justify-center"><span className="text-4xl opacity-20">🎟️</span></div>)}
+                                            <div className="absolute bottom-0 left-0 w-full p-6 z-20"><span className="bg-ministry-gold text-ministry-blue text-[10px] font-bold px-2 py-1 rounded-sm uppercase tracking-widest shadow-md">Official Access Pass</span><h2 className="text-2xl font-serif font-bold text-white mt-2 leading-tight drop-shadow-md">{selectedEvent.Title}</h2></div>
+                                        </div>
                                         <div className="p-6 bg-slate-900 relative">
                                             <div className="flex flex-col gap-4 mb-6 border-l-2 border-ministry-gold pl-4"><div><p className="text-[10px] text-white/50 uppercase tracking-widest">Date & Time</p><p className="text-sm font-bold text-white">{successData.date}</p></div><div><p className="text-[10px] text-white/50 uppercase tracking-widest">Venue</p><p className="text-xs text-white/80 leading-relaxed">{successData.venue}</p></div></div>
                                             <div className="bg-white/5 p-4 rounded-lg border border-white/10 flex items-center gap-5"><div className="bg-white p-2 rounded-sm shadow-lg shrink-0"><img src={`https://quickchart.io/qr?text=${encodeURIComponent(successData.ticket)}&dark=000000&light=ffffff&size=200`} alt="Gate QR" className="w-24 h-24 border-2 border-white rounded-sm" /></div><div className="flex-1 overflow-hidden"><p className="text-[10px] text-white/40 uppercase tracking-widest mb-1">Attendee</p><h3 className="text-lg font-bold text-white mb-2 truncate">{successData.name}</h3><p className="text-[10px] text-white/40 uppercase tracking-widest mb-0.5">Ticket ID</p><h3 className="text-xl font-mono text-ministry-gold tracking-widest">{successData.ticket}</h3></div></div>
                                             <p className="text-[10px] text-center text-white/30 mt-6">Please save this image and present the QR code at the entrance.</p>
                                         </div>
                                     </div>
+
+                                    {/* Action Buttons */}
                                     <div className="bg-white p-4 mt-4 rounded-lg flex flex-col gap-3 no-print shadow-lg">
                                         <button onClick={handleDownloadTicket} className="w-full bg-ministry-blue text-white py-3 font-bold uppercase text-xs tracking-widest rounded-sm hover:bg-ministry-gold hover:text-ministry-blue transition flex justify-center gap-2 items-center shadow-lg"><span id="download-btn-text">📥 Download Ticket (Image)</span></button>
                                         {successData.whatsAppLink && <a href={successData.whatsAppLink} target="_blank" rel="noreferrer" className="w-full flex items-center justify-center gap-2 bg-[#25D366] text-white py-3 font-bold uppercase text-xs tracking-widest rounded-sm hover:bg-[#128C7E] transition"><span>💬</span> Join WhatsApp Group</a>}
                                     </div>
                                 </div>
                             </div>
+
+                        /* === CONDITION 2: SHOW NEW REGISTRATION FORM WITH PHOTO === */
                         ) : isRegistering ? (
-                            <div className="relative overflow-hidden min-h-[500px] flex flex-col">
-                                <div className="absolute inset-0 z-0">{selectedEvent.Poster ? (<><img src={getImageUrl(selectedEvent.Poster)} alt="Background" className="w-full h-full object-cover blur-md scale-110 opacity-50" /><div className="absolute inset-0 bg-gradient-to-b from-gray-900/90 to-black/95"></div></>) : (<div className="w-full h-full bg-gray-900"></div>)}</div>
-                                <div className="relative z-10 p-8 text-white">
-                                    <h2 className="text-2xl font-serif font-bold text-white mb-1">Secure Your Seat</h2>
-                                    <p className="text-sm text-white/60 mb-6 uppercase tracking-widest">{selectedEvent.Title}</p>
-                                    <form onSubmit={handleEventRegistrationSubmit} className="space-y-4">
-                                        <input type="text" name="name" value={registrationData.name} onChange={handleRegistrationInput} required className="w-full p-3 bg-white/5 border border-white/20 rounded-sm text-white placeholder-white/30 capitalize" placeholder="Enter your full name" />
-                                        <input type="email" name="email" value={registrationData.email} onChange={handleRegistrationInput} required className="w-full p-3 bg-white/5 border border-white/20 rounded-sm text-white placeholder-white/30" placeholder="name@example.com" />
-                                        <select name="attendanceType" value={registrationData.attendanceType || 'Physical'} onChange={handleRegistrationInput} className="w-full p-3 bg-white/5 border border-white/20 rounded-sm text-white"><option value="Physical" className="text-black">Physically</option><option value="Virtual" className="text-black">Virtually</option></select>
-                                        <input type="tel" name="phone" placeholder="e.g. +234 80 123 4567" required className="w-full p-3 bg-white/5 border border-white/20 rounded-sm text-white placeholder-white/30" value={registrationData.phone} onChange={(e) => setRegistrationData({ ...registrationData, phone: e.target.value })} />
-                                        <div className="flex gap-4 mt-8"><button type="submit" disabled={isSubmitting} className={`flex-1 py-4 font-bold uppercase tracking-widest transition shadow-lg rounded-sm ${isSubmitting ? 'bg-gray-600 cursor-wait' : 'bg-ministry-gold text-ministry-blue hover:bg-white'}`}>{isSubmitting ? "Processing..." : "Generate Ticket"}</button><button type="button" onClick={() => { if (selectedEvent.isBook) { setEventModalOpen(false); } else { setIsRegistering(false); } }} className="px-6 py-4 border border-white/20 text-white font-bold uppercase tracking-widest hover:bg-white/10 transition rounded-sm">Cancel</button></div>
-                                        {/* PHOTO UPLOAD FIELD */}
-                                        <div className="mb-4">
-                                            <label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">
-                                                Upload a Selfie/Headshot <span className="text-red-500">*</span>
-                                            </label>
-                                            <div className="flex items-center gap-4">
-                                                {/* Preview Circle */}
-                                                <div className="w-16 h-16 rounded-full bg-gray-100 border border-gray-200 overflow-hidden flex-shrink-0">
-                                                    <img 
-                                                        id="photo-preview" 
-                                                        src="https://via.placeholder.com/150?text=Face" 
-                                                        className="w-full h-full object-cover" 
-                                                        alt="Preview" 
-                                                    />
+                            <div className="fixed inset-0 z-[9999] overflow-y-auto bg-[#050505]">    
+                                {/* Background Effect */}
+                                <div className="fixed inset-0 z-0 pointer-events-none">
+                                    {selectedEvent.Poster ? (
+                                        <>
+                                            <img src={getImageUrl(selectedEvent.Poster)} alt="Background" className="w-full h-full object-cover blur-md opacity-100 scale-105" />
+                                            <div className="absolute inset-0 bg-black/60"></div> 
+                                        </>
+                                    ) : (<div className="w-full h-full bg-[#050505]"></div>)}
+                                </div>
+
+                                {/* Scrollable Content Wrapper */}
+                                <div className="relative z-10 flex min-h-full items-center justify-center p-4 py-20">        
+                                    <div className="w-full max-w-md mx-auto relative mt-8">            
+                                        
+                                        {/* THE LEGEND PHOTO (Gold Border) */}
+                                        <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 z-20">
+                                            <div className="w-32 h-24 bg-gray-900 rounded-lg border-[3px] border-ministry-gold shadow-[0_0_25px_rgba(0,0,0,0.5)] overflow-hidden relative group flex items-center justify-center">                    
+                                                {/* Preview Image */}
+                                                <img id="photo-preview-rect" src="" className="w-full h-full object-cover hidden" alt="Preview" />                    
+                                                {/* Placeholder Icon */}
+                                                <div id="photo-placeholder-icon" className="text-gray-600 flex flex-col items-center">
+                                                    <span className="text-3xl">👤</span>
                                                 </div>
-                                                {/* The Input */}
-                                                <input 
-                                                    type="file" 
-                                                    name="photo" 
-                                                    accept="image/*" 
-                                                    required
-                                                    onChange={(e) => {
-                                                        // Logic to show preview immediately
-                                                        const file = e.target.files[0];
-                                                        if (file) {
-                                                            document.getElementById('photo-preview').src = URL.createObjectURL(file);
-                                                        }
-                                                    }}
-                                                    className="text-xs text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-sm file:border-0 file:text-[10px] file:font-bold file:bg-ministry-blue file:text-white hover:file:bg-ministry-gold transition"
-                                                />
+                                                <div className="absolute inset-0 bg-black/50 hidden group-hover:flex items-center justify-center pointer-events-none">
+                                                    <span className="text-xl">📸</span>
+                                                </div>
                                             </div>
-                                            <p className="text-[9px] text-gray-400 mt-1">Required for entry verification.</p>
                                         </div>
-                                    </form>
+
+                                        {/* THE FORM CARD */}
+                                        <div className="border border-white/20 rounded-lg p-6 pt-16 bg-black/70 backdrop-blur-xl shadow-2xl relative">                
+                                            <div className="text-center mb-5">
+                                                <h2 className="text-2xl font-serif font-bold text-white drop-shadow-md">Secure Your Seat</h2>
+                                                <p className="text-[10px] text-white/80 uppercase tracking-widest font-bold mt-1">{selectedEvent.Title}</p>
+                                            </div>
+                                            <form onSubmit={handleEventRegistrationSubmit} className="space-y-3">                    
+                                                {/* Photo Input */}
+                                                <div className="text-center pb-3 border-b border-white/10 mb-2">
+                                                    <label className="inline-block cursor-pointer text-ministry-gold hover:text-white text-[10px] font-bold uppercase tracking-widest border border-ministry-gold hover:border-white px-4 py-2 rounded-sm transition shadow-lg bg-black/40">
+                                                        📸 Select Photo *
+                                                        <input 
+                                                            type="file" name="photo" accept="image/*" className="hidden" 
+                                                            onChange={(e) => {
+                                                                const file = e.target.files[0];
+                                                                if (file) {
+                                                                    const imgEl = document.getElementById('photo-preview-rect');
+                                                                    const iconEl = document.getElementById('photo-placeholder-icon');
+                                                                    imgEl.src = URL.createObjectURL(file);
+                                                                    imgEl.classList.remove('hidden');
+                                                                    iconEl.classList.add('hidden');
+                                                                }
+                                                            }}
+                                                        />
+                                                    </label>
+                                                </div>
+
+                                                {/* Inputs */}
+                                                <div>
+                                                    <label className="block text-[11px] text-gray-300 uppercase font-bold mb-1.5 ml-1">Full Name</label>
+                                                    <input type="text" name="name" value={registrationData.name} onChange={handleRegistrationInput} required className="w-full p-3.5 bg-black/40 border border-white/20 rounded-sm text-white placeholder-white/40 capitalize focus:border-ministry-gold outline-none text-sm transition focus:bg-black/60" placeholder="John Doe" />
+                                                </div>                    
+                                                <div>
+                                                    <label className="block text-[11px] text-gray-300 uppercase font-bold mb-1.5 ml-1">Email Address</label>
+                                                    <input type="email" name="email" value={registrationData.email} onChange={handleRegistrationInput} required className="w-full p-3.5 bg-black/40 border border-white/20 rounded-sm text-white placeholder-white/40 focus:border-ministry-gold outline-none text-sm transition focus:bg-black/60" placeholder="john@example.com" />
+                                                </div>
+                                                <div className="grid grid-cols-2 gap-3">
+                                                    <div>
+                                                        <label className="block text-[11px] text-gray-300 uppercase font-bold mb-1.5 ml-1">Attendance</label>
+                                                        <select name="attendanceType" value={registrationData.attendanceType || 'Physical'} onChange={handleRegistrationInput} className="w-full p-3.5 bg-black/40 border border-white/20 rounded-sm text-white focus:border-ministry-gold outline-none text-sm cursor-pointer transition focus:bg-black/60">
+                                                            <option value="Physical" className="text-black">Physical</option>
+                                                            <option value="Virtual" className="text-black">Virtual</option>
+                                                        </select>
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-[11px] text-gray-300 uppercase font-bold mb-1.5 ml-1">WhatsApp</label>
+                                                        <input type="tel" name="phone" placeholder="+234..." required className="w-full p-3.5 bg-black/40 border border-white/20 rounded-sm text-white placeholder-white/40 focus:border-ministry-gold outline-none text-sm transition focus:bg-black/60" value={registrationData.phone} onChange={(e) => setRegistrationData({ ...registrationData, phone: e.target.value })} />
+                                                    </div>
+                                                </div>
+
+                                                {/* Buttons */}
+                                                <div className="flex gap-3 pt-4">
+                                                    <button type="submit" disabled={isSubmitting} className={`flex-1 py-3 font-bold uppercase tracking-widest transition shadow-lg rounded-sm text-xs ${isSubmitting ? 'bg-gray-600 cursor-wait' : 'bg-ministry-gold text-ministry-blue hover:bg-white shadow-[0_0_15px_rgba(191,149,63,0.4)]'}`}>
+                                                        {isSubmitting ? "..." : "Confirm Seat"}
+                                                    </button>
+                                                    <button type="button" onClick={() => { if (selectedEvent.isBook) { setEventModalOpen(false); } else { setIsRegistering(false); } }} className="px-6 py-3 border border-white/20 text-gray-300 font-bold uppercase tracking-widest hover:bg-white/10 hover:text-white transition rounded-sm text-xs">
+                                                        Cancel
+                                                    </button>
+                                                </div>
+                                            </form>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
+
+                        /* === CONDITION 3: SHOW EVENT DETAILS (DEFAULT) === */
                         ) : (
                             <div>
                                 {selectedEvent.Poster && <div className="h-48 w-full overflow-hidden"><img src={getImageUrl(selectedEvent.Poster)} alt="Cover" className="w-full h-full object-cover" /></div>}
                                 <div className="p-8">
                                     <span className="text-ministry-gold text-xs font-bold uppercase tracking-widest">{selectedEvent.Category}</span>
                                     <h2 className="text-3xl font-serif font-bold text-ministry-blue mt-2 mb-4">{selectedEvent.Title}</h2>
+                                    
+                                    {/* Attendees List */}
                                     <div className="bg-gray-50 p-4 rounded-sm border border-gray-100 mb-6">
                                         <div className="flex justify-between items-center mb-3"><h4 className="text-xs font-bold uppercase text-gray-500 tracking-widest">Confirmed Attendees ({allRegistrations.filter(r => r.eventTitle === selectedEvent.Title).length})</h4></div>
-                                        <div className="max-h-32 overflow-y-auto space-y-2 pr-2 custom-scrollbar">{allRegistrations.filter(r => r.eventTitle === selectedEvent.Title).sort((a, b) => a.fullName.localeCompare(b.fullName)).map((reg, index) => (<div key={index} className="flex justify-between items-center text-xs border-b border-gray-100 pb-1 last:border-0"><span className="font-bold text-gray-700 truncate w-1/3">{reg.fullName}</span></div>))}{allRegistrations.filter(r => r.eventTitle === selectedEvent.Title).length === 0 && <p className="text-xs text-gray-400 italic">Be the first to register!</p>}</div>
+                                        <div className="max-h-32 overflow-y-auto space-y-2 pr-2 custom-scrollbar">
+                                            {allRegistrations.filter(r => r.eventTitle === selectedEvent.Title).sort((a, b) => a.fullName.localeCompare(b.fullName)).map((reg, index) => (
+                                                <div key={index} className="flex justify-between items-center text-xs border-b border-gray-100 pb-1 last:border-0">
+                                                    <span className="font-bold text-gray-700 truncate w-1/3">{reg.fullName}</span>
+                                                </div>
+                                            ))}
+                                            {allRegistrations.filter(r => r.eventTitle === selectedEvent.Title).length === 0 && <p className="text-xs text-gray-400 italic">Be the first to register!</p>}
+                                        </div>
                                     </div>
+
                                     <p className="text-gray-600 leading-relaxed mb-8">{selectedEvent.Description}</p>
                                     <button onClick={() => setIsRegistering(true)} className="w-full bg-ministry-gold text-white py-4 font-bold uppercase tracking-widest hover:bg-ministry-blue transition shadow-lg">Register Now</button>
                                 </div>
@@ -1949,7 +2201,7 @@ function App() {
 
                             <div>
                                 <label className="text-[10px] font-bold uppercase text-gray-400">{authMode === 'login' ? 'Email or Username' : 'Email Address'}</label>
-                                <input name="identifier" type={authMode === 'login' ? 'text' : 'email'} name={authMode === 'login' ? 'identifier' : 'email'} required className="w-full p-3 border border-gray-300 rounded-sm text-sm" />
+                                <input type={authMode === 'login' ? 'text' : 'email'} name={authMode === 'login' ? 'identifier' : 'email'} required className="w-full p-3 border border-gray-300 rounded-sm text-sm" />
                             </div>
 
                             <div>
