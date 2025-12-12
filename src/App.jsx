@@ -26,6 +26,9 @@ function App() {
     const [authMode, setAuthMode] = useState('login'); // 'login' or 'register'
 
     const [loading, setLoading] = useState(true);
+    // Sales Data State
+    const [bookSales, setBookSales] = useState([]);
+    const [isLoadingSales, setIsLoadingSales] = useState(false);
     const [quotes, setQuotes] = useState([]);
     const [books, setBooks] = useState([]);
     const [movies, setMovies] = useState([]);
@@ -45,6 +48,8 @@ function App() {
     const [userCurrency] = useState('USD');
     const [formData, setFormData] = useState({ name: '', churchName: '', email: '', message: '' });
     const [formStatus, setFormStatus] = useState('');
+
+    const [salesSearch, setSalesSearch] = useState('');
 
     // Registration States
     const [eventModalOpen, setEventModalOpen] = useState(false);
@@ -69,6 +74,10 @@ function App() {
     // --- SUBSCRIBE STATE ---
     const [showSubscribeModal, setShowSubscribeModal] = useState(false);
     const [subscribeStatus, setSubscribeStatus] = useState(''); // 'loading', 'success', 'error'
+
+    // === ADD THESE NEW LINES ===
+    const [showSuccessModal, setShowSuccessModal] = useState(false);
+    const [successDetails, setSuccessDetails] = useState({ ref: '', amount: 0, email: '' });
 
     // =========================================
     // DEVICE AUTHORIZATION LOGIC
@@ -485,6 +494,41 @@ function App() {
     const handleScan = (scannedRawValue) => { if (scannedRawValue) { setCheckInCode(scannedRawValue); verifyTicket(scannedRawValue); } };
     const handleManualSubmit = (e) => { e.preventDefault(); verifyTicket(checkInCode); };
 
+    // === FETCH SALES HISTORY ===
+    const fetchBookSales = async () => {
+        if (!adminUser || !adminUser.token) return;
+        
+        setIsLoadingSales(true);
+        try {
+            const res = await axios.get(
+                `${STRAPI_URL}/api/book-sales?sort=createdAt:desc&pagination[pageSize]=100`, 
+                {
+                    headers: { Authorization: `Bearer ${adminUser.token}` }
+                }
+            );
+            
+            // Strapi v5 Logic: Ensure we grab documentId
+            const salesData = res.data.data.map(item => ({
+                id: item.id,
+                documentId: item.documentId, // <--- CRITICAL: Make sure this is captured
+                ...item // Spread the rest of the fields (customerName, etc.)
+            }));
+            
+            setBookSales(salesData);
+        } catch (error) {
+            console.error("Failed to load sales:", error);
+        } finally {
+            setIsLoadingSales(false);
+        }
+    };
+
+`    // Optional: Automatically fetch when tab is clicked
+    useEffect(() => {
+        if (adminFormData.activeTab === 'sales') {
+            fetchBookSales();
+        }
+    }, [adminFormData.activeTab]);`
+
     const fetchQuotes = async () => { try { const res = await axios.get(`${STRAPI_URL}/api/quotes`); const raw = res.data.data || []; const processed = raw.map(item => { const attrs = item.attributes || item; return { id: item.id, documentId: item.documentId, Text: attrs.Text || attrs.text || "", Highlight: attrs.Highlight || attrs.highlight || "", PostedBy: attrs.PostedBy || attrs.postedBy || "" }; }); setQuotes(processed); } catch (error) { console.error("Failed to refresh quotes", error); } };
     const handleAddQuote = async (e) => { e.preventDefault(); if (!adminUser) return alert("You must be logged in."); const textVal = e.target.quoteText.value; const highlightVal = e.target.quoteHighlight.value; const authorName = adminUser.username || "Admin"; const payload = { Text: textVal, Highlight: highlightVal, PostedBy: authorName }; try { await axios.post(`${STRAPI_URL}/api/quotes`, { data: payload }, { headers: { Authorization: `Bearer ${adminUser.token}` } }); alert("Wisdom Added Successfully!"); setQuoteFormText(""); e.target.reset(); await fetchQuotes(); } catch (error) { console.error("Save Error:", error); alert("Failed to save. Check Console."); } };
     const handleUpdateQuote = async (e) => { e.preventDefault(); if (!adminUser) return alert("You must be logged in."); const textVal = e.target.quoteText.value; const highlightVal = e.target.quoteHighlight.value; const authorName = adminUser.username || "Admin"; const targetId = editingQuote.documentId || editingQuote.id; const payload = { Text: textVal, Highlight: highlightVal, PostedBy: authorName }; try { await axios.put(`${STRAPI_URL}/api/quotes/${targetId}`, { data: payload }, { headers: { Authorization: `Bearer ${adminUser.token}` } }); alert("Quote Updated Successfully!"); cancelEditing(); await fetchQuotes(); } catch (error) { console.error("Update Failed:", error); alert("Failed to update."); } };
@@ -546,6 +590,54 @@ function App() {
         localStorage.removeItem('user_token');
         localStorage.removeItem('user_data');
         window.location.reload(); // Refresh to clear states
+    };
+
+    // === DELETE SINGLE SALE (Fixed for Strapi v5) ===
+    const handleDeleteSale = async (sale) => {
+        if (!window.confirm("Are you sure you want to delete this transaction record?")) return;
+
+        // Strapi v5 uses documentId, fallback to id if missing
+        const targetId = sale.documentId || sale.id; 
+
+        try {
+            await axios.delete(`${STRAPI_URL}/api/book-sales/${targetId}`, {
+                headers: { Authorization: `Bearer ${adminUser.token}` }
+            });
+            
+            // Update UI
+            setBookSales(prev => prev.filter(item => item.documentId !== targetId));
+            alert("Record deleted.");
+        } catch (error) {
+            console.error("Delete failed:", error);
+            alert("Failed to delete. Check server logs.");
+        }
+    };
+
+    // === DELETE ALL SALES (Fixed for Strapi v5) ===
+    const handleDeleteAllSales = async () => {
+        if (bookSales.length === 0) return;
+        
+        if (!window.confirm("⚠️ WARNING: You are about to DELETE ALL sales history.")) return;
+        if (!window.confirm("Are you absolutely sure? This cannot be undone.")) return;
+
+        try {
+            // Use map to create a list of delete requests using documentId
+            const deletePromises = bookSales.map(sale => {
+                const targetId = sale.documentId || sale.id;
+                return axios.delete(`${STRAPI_URL}/api/book-sales/${targetId}`, {
+                    headers: { Authorization: `Bearer ${adminUser.token}` }
+                });
+            });
+
+            await Promise.all(deletePromises);
+            
+            setBookSales([]); 
+            alert("All records have been wiped.");
+        } catch (error) {
+            console.error("Bulk delete failed:", error);
+            alert("Some records could not be deleted.");
+            fetchBookSales(); 
+        }
     };
 
     // Helper to save session
@@ -1004,6 +1096,12 @@ function App() {
                                     >
                                         Team
                                     </button>
+                                    <button 
+                                        onClick={() => setAdminFormData({...adminFormData, activeTab: 'sales'})} 
+                                        className={`flex-shrink-0 px-4 py-2 rounded text-[10px] md:text-xs font-bold uppercase tracking-widest border border-white/20 transition ${adminFormData.activeTab === 'sales' ? 'bg-ministry-gold text-ministry-blue border-ministry-gold' : 'hover:bg-white/10'}`}
+                                    >
+                                        Sales
+                                    </button>
                                 </>
                             )}
 
@@ -1137,6 +1235,196 @@ function App() {
                                     </div> 
                                     <button className="w-full bg-ministry-blue text-white py-4 font-bold uppercase tracking-widest hover:bg-ministry-gold hover:text-ministry-blue transition shadow-lg text-sm rounded-sm">Publish Entry</button>
                                 </form>
+                            </div>
+                        )}
+                        {/* === PREMIUM SALES DASHBOARD === */}
+                        {adminFormData.activeTab === 'sales' && (
+                            <div className="bg-gray-50/50 p-6 md:p-10 rounded-3xl h-full flex flex-col animate-fade-in">
+                                
+                                {/* === HEADER SECTION === */}
+                                <div className="flex flex-col md:flex-row justify-between items-end md:items-center mb-8 gap-6">
+                                    <div>
+                                        <h3 className="text-3xl font-serif font-bold text-gray-800 tracking-tight mb-2">Transactions</h3>
+                                        <div className="flex items-center gap-3 text-sm">
+                                            <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full font-bold shadow-sm border border-green-200">
+                                                Revenue: ₦{bookSales.reduce((sum, s) => sum + (s.amountPaid || 0), 0).toLocaleString()}
+                                            </span>
+                                            <span className="text-gray-400">|</span>
+                                            <span className="text-gray-500 font-medium">{bookSales.length} total sales</span>
+                                        </div>
+                                    </div>
+
+                                    {/* ACTION TOOLBAR */}
+                                    <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+                                        
+                                        {/* 1. Search Input */}
+                                        <div className="relative group w-full md:w-64">
+                                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-ministry-blue transition">
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                                </svg>
+                                            </span>
+                                            <input 
+                                                type="text" 
+                                                placeholder="Search transactions..." 
+                                                value={salesSearch}
+                                                onChange={(e) => setSalesSearch(e.target.value)}
+                                                className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-xs font-medium focus:ring-2 focus:ring-ministry-blue/10 focus:border-ministry-blue outline-none shadow-sm transition-all"
+                                            />
+                                        </div>
+
+                                        {/* 2. Refresh Button (Minimalist) */}
+                                        <button 
+                                            onClick={fetchBookSales} 
+                                            className="p-2.5 bg-white border border-gray-200 text-gray-500 rounded-xl hover:bg-gray-50 hover:text-ministry-blue transition shadow-sm"
+                                            title="Refresh Data"
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                            </svg>
+                                        </button>
+
+                                        {/* 3. NEW CLEAR BUTTON (Clean, Professional, SVG Icon) */}
+                                        {bookSales.length > 0 && (
+                                            <button 
+                                                onClick={handleDeleteAllSales} 
+                                                className="group px-4 py-2.5 bg-white border border-red-100 text-red-500 rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-red-50 hover:border-red-200 hover:text-red-600 transition-all shadow-sm flex items-center gap-2"
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 opacity-70 group-hover:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                </svg>
+                                                <span>Clear History</span>
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* === TABLE CARD === */}
+                                <div className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden flex-1 flex flex-col">
+                                    <div className="overflow-x-auto flex-1 custom-scrollbar">
+                                        <table className="w-full text-left border-collapse min-w-[800px]">
+                                            <thead className="bg-gray-50/80 backdrop-blur sticky top-0 z-10 border-b border-gray-100">
+                                                <tr className="text-gray-400 text-[11px] uppercase font-bold tracking-wider">
+                                                    <th className="p-5 pl-8">Customer</th>
+                                                    <th className="p-5">Order Details</th>
+                                                    <th className="p-5">Payment Info</th>
+                                                    <th className="p-5">Amount</th>
+                                                    <th className="p-5">Status</th>
+                                                    <th className="p-5 text-right pr-8">Actions</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-gray-50">
+                                                {bookSales
+                                                    .filter(sale => 
+                                                        salesSearch === '' || 
+                                                        sale.customerName?.toLowerCase().includes(salesSearch.toLowerCase()) || 
+                                                        sale.customerEmail?.toLowerCase().includes(salesSearch.toLowerCase()) ||
+                                                        sale.reference?.toLowerCase().includes(salesSearch.toLowerCase())
+                                                    )
+                                                    .map((sale) => (
+                                                    <tr key={sale.id} className="hover:bg-blue-50/30 transition-colors duration-200 group">
+                                                        
+                                                        {/* 1. CUSTOMER COLUMN */}
+                                                        <td className="p-5 pl-8">
+                                                            <div className="flex items-center gap-4">
+                                                                {/* Auto-Avatar */}
+                                                                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-ministry-blue to-blue-600 text-white flex items-center justify-center font-bold text-xs shadow-md">
+                                                                    {sale.customerName ? sale.customerName.split(' ').map(n=>n[0]).join('').slice(0,2).toUpperCase() : '?'}
+                                                                </div>
+                                                                <div>
+                                                                    <div className="font-bold text-gray-800 text-sm">{sale.customerName}</div>
+                                                                    <div className="text-gray-400 text-xs">{sale.customerEmail}</div>
+                                                                    
+                                                                    {/* Payer Differs Warning */}
+                                                                    {((sale.payerEmail && sale.payerEmail !== sale.customerEmail) || sale.payerAccountName) && (
+                                                                        <div className="mt-1.5 flex items-center gap-1.5 bg-yellow-50 text-yellow-700 px-2 py-1 rounded-md w-max border border-yellow-100">
+                                                                            <span className="text-[10px] font-bold uppercase opacity-60">Paid by:</span>
+                                                                            <span className="text-[10px] font-medium truncate max-w-[100px]">{sale.payerAccountName || sale.payerEmail}</span>
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        </td>
+
+                                                        {/* 2. ORDER DETAILS */}
+                                                        <td className="p-5">
+                                                            <div className="flex flex-col gap-1">
+                                                                <span className="font-medium text-gray-700 text-sm">{sale.bookTitle}</span>
+                                                                <span className="text-[10px] text-gray-400 font-mono bg-gray-50 w-max px-1.5 py-0.5 rounded border border-gray-100">
+                                                                    Ref: {sale.reference}
+                                                                </span>
+                                                                <span className="text-[10px] text-gray-400">
+                                                                    {new Date(sale.publishedAt || sale.createdAt).toLocaleDateString(undefined, {dateStyle: 'medium'})} • {new Date(sale.publishedAt || sale.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                                                                </span>
+                                                            </div>
+                                                        </td>
+
+                                                        {/* 3. PAYMENT INFO */}
+                                                        <td className="p-5">
+                                                            <div className="flex items-center gap-2 text-sm text-gray-600">
+                                                                {/* Icon Logic */}
+                                                                <span className="text-lg bg-gray-100 p-1.5 rounded-lg">
+                                                                    {(sale.cardType === 'visa' || sale.cardType === 'mastercard') ? '💳' : '🏦'}
+                                                                </span>
+                                                                <div className="flex flex-col">
+                                                                    <span className="capitalize font-medium text-xs">
+                                                                        {sale.bank || 'Unknown Bank'}
+                                                                    </span>
+                                                                    <span className="text-[10px] text-gray-400">
+                                                                        {sale.cardType} {sale.last4 ? `•••• ${sale.last4}` : ''}
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                        </td>
+
+                                                        {/* 4. AMOUNT */}
+                                                        <td className="p-5">
+                                                            <span className="font-bold text-gray-800 text-base">
+                                                                ₦{sale.amountPaid?.toLocaleString()}
+                                                            </span>
+                                                        </td>
+
+                                                        {/* 5. STATUS */}
+                                                        <td className="p-5">
+                                                            <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border shadow-sm ${
+                                                                sale.paymentStatus === 'success' 
+                                                                    ? 'bg-green-50 text-green-700 border-green-100' 
+                                                                    : 'bg-yellow-50 text-yellow-700 border-yellow-100'
+                                                            }`}>
+                                                                {sale.paymentStatus || 'Success'}
+                                                            </span>
+                                                        </td>
+
+                                                        {/* 6. ACTIONS */}
+                                                        <td className="p-5 pr-8 text-right">
+                                                            <button 
+                                                                onClick={() => handleDeleteSale(sale)}
+                                                                className="w-8 h-8 rounded-full flex items-center justify-center text-gray-300 hover:text-red-500 hover:bg-red-50 transition-all duration-300 transform hover:rotate-12 group-hover:text-gray-400"
+                                                                title="Delete Transaction"
+                                                            >
+                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                                </svg>
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                                
+                                                {/* EMPTY STATE */}
+                                                {bookSales.length === 0 && !isLoadingSales && (
+                                                    <tr>
+                                                        <td colSpan="6" className="text-center py-20">
+                                                            <div className="flex flex-col items-center opacity-50">
+                                                                <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center text-3xl mb-4">📭</div>
+                                                                <p className="text-gray-500 font-medium">No transaction records found.</p>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                )}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
                             </div>
                         )}
                     </div>
@@ -2030,15 +2318,11 @@ function App() {
 
             {preorderModalOpen && selectedBook && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center bg-ministry-blue/90 backdrop-blur-sm p-4 animate-fade-in">
-                    
-                    {/* CONTAINER: Reduced max-w-5xl to max-w-3xl for a cleaner look */}
                     <div className="bg-white w-full max-w-3xl rounded-sm shadow-2xl overflow-hidden flex flex-col md:flex-row relative max-h-[90vh] md:max-h-[85vh]">
                         
-                        {/* Close Button */}
                         <button onClick={() => setPreorderModalOpen(false)} className="absolute top-4 right-4 z-50 text-gray-400 hover:text-red-500 text-2xl font-bold bg-white/80 rounded-full w-8 h-8 flex items-center justify-center shadow-sm">✕</button>
 
-                        {/* === LEFT SIDE (IMAGE) === */}
-                        {/* Added 'hidden md:flex' to HIDE this big block on mobile */}
+                        {/* LEFT SIDE (Image) */}
                         <div className="hidden md:flex md:w-5/12 bg-gray-100 items-center justify-center p-8 relative overflow-hidden min-h-[300px]">
                             <div className="absolute inset-0 opacity-10 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]"></div>
                             <div className="relative w-40 shadow-[0_20px_50px_rgba(0,0,0,0.3)] transform rotate-[-5deg] hover:rotate-0 transition duration-500 z-10">
@@ -2046,11 +2330,10 @@ function App() {
                             </div>
                         </div>
 
-                        {/* === RIGHT SIDE (FORM) === */}
-                        {/* Added 'overflow-y-auto' here so only the form scrolls if needed */}
+                        {/* RIGHT SIDE (Form) */}
                         <div className="w-full md:w-7/12 p-6 md:p-8 flex flex-col text-left overflow-y-auto custom-scrollbar">
                             
-                            {/* Mobile-Only Image Banner (Optional, small version) */}
+                            {/* Mobile Header */}
                             <div className="md:hidden flex items-center gap-4 mb-6 border-b border-gray-100 pb-4">
                                 {selectedBook.CoverArt && <img src={getImageUrl(selectedBook.CoverArt)} alt="Cover" className="w-16 h-20 object-cover rounded shadow-sm" />}
                                 <div>
@@ -2059,7 +2342,7 @@ function App() {
                                 </div>
                             </div>
 
-                            {/* Desktop Title (Hidden on Mobile to save space since we used the banner above) */}
+                            {/* Desktop Header */}
                             <div className="hidden md:block">
                                 <div className="inline-block border-b-2 border-ministry-gold pb-1 mb-2 w-max">
                                     <span className="text-ministry-gold font-bold tracking-[0.2em] uppercase text-xs">Official Hybrid Launch</span>
@@ -2071,7 +2354,7 @@ function App() {
                                 Preordering secures your copy and grants you exclusive access to the Launch Event.
                             </p>
 
-                            {/* Event Details Box */}
+                            {/* Info Box */}
                             <div className="bg-gray-50 border border-gray-100 p-4 rounded-sm mb-6 text-xs">
                                 <div className="flex justify-between items-center mb-4 gap-4 border-b border-gray-200 pb-3">
                                     <div><span className="block text-[10px] uppercase text-gray-400 font-bold tracking-widest mb-1">Date</span><span className="text-ministry-blue font-bold">{selectedBook.LaunchDate ? new Date(selectedBook.LaunchDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'TBA'}</span></div>
@@ -2083,7 +2366,7 @@ function App() {
                                 </div>
                             </div>
 
-                            {/* === PAYMENT FORM SECTION === */}
+                            {/* === FORM SECTION (UPDATED) === */}
                             <div className="mt-auto border-t border-gray-100 pt-4">
                                 <div className="flex justify-between items-end mb-4">
                                     <span className="text-xs text-gray-500 font-bold uppercase tracking-widest">Preorder Bundle</span>
@@ -2095,25 +2378,51 @@ function App() {
                                 </div>
 
                                 <div className="space-y-3 mb-4">
-                                    <input type="text" placeholder="Full Name" className="w-full p-3 border border-gray-300 rounded-sm text-sm focus:border-ministry-gold outline-none" value={preorderName} onChange={(e) => setPreorderName(e.target.value)} />
-                                    <input type="email" placeholder="Email Address" className="w-full p-3 border border-gray-300 rounded-sm text-sm focus:border-ministry-gold outline-none" value={preorderEmail} onChange={(e) => setPreorderEmail(e.target.value)} />
+                                    {/* NAME: Strict Title Case */}
+                                    <input 
+                                        type="text" 
+                                        placeholder="Full Name" 
+                                        className="w-full p-3 border border-gray-300 rounded-sm text-sm focus:border-ministry-gold outline-none capitalize"
+                                        value={preorderName}
+                                        onChange={(e) => {
+                                            // 1. Force everything to lowercase first
+                                            // 2. Split by spaces
+                                            // 3. Capitalize the first letter of each word
+                                            const val = e.target.value
+                                                .toLowerCase()
+                                                .split(' ')
+                                                .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+                                                .join(' ');
+                                            setPreorderName(val);
+                                        }}
+                                    />
+                                    {/* EMAIL: Auto-Lowercase */}
+                                    <input 
+                                        type="email" 
+                                        placeholder="Email Address" 
+                                        className="w-full p-3 border border-gray-300 rounded-sm text-sm focus:border-ministry-gold outline-none lowercase"
+                                        value={preorderEmail}
+                                        onChange={(e) => setPreorderEmail(e.target.value.toLowerCase())}
+                                    />
                                 </div>
 
-                                {/* Paystack Button */}
+                                {/* PAYSTACK TRIGGER (Updated to show Receipt) */}
                                 <PaystackTrigger 
                                     amount={selectedBook.LocalPrices?.find(p => p.Currency === 'NGN')?.Amount || 5000}
                                     email={preorderEmail}
                                     name={preorderName}
                                     bookTitle={selectedBook.Title}
                                     onSuccess={(reference) => {
-                                        setPreorderModalOpen(false);
-                                        setPreorderName('');
-                                        setPreorderEmail('');
-                                        alert("Order Successful! Ref: " + reference);
+                                        // Save details and show receipt
+                                        setSuccessDetails({
+                                            ref: reference,
+                                            amount: selectedBook.LocalPrices?.find(p => p.Currency === 'NGN')?.Amount || 5000,
+                                            email: preorderEmail
+                                        });
+                                        setShowSuccessModal(true);
                                     }}
                                 />
                             </div>
-
                         </div>
                     </div>
                 </div>
@@ -2387,6 +2696,49 @@ function App() {
                                 );
                             }
                         })()}
+                    </div>
+                </div>
+            )}
+
+            {/* === RECEIPT MODAL === */}
+            {showSuccessModal && (
+                <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
+                    <div className="bg-white w-full max-w-sm rounded-sm shadow-2xl relative text-center p-8 border-t-4 border-green-500">
+                        
+                        <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4 shadow-inner">
+                            <span className="text-3xl">✅</span>
+                        </div>
+
+                        <h2 className="text-xl font-bold text-gray-800 mb-1 font-serif">Payment Successful!</h2>
+                        <p className="text-gray-500 text-xs mb-6 uppercase tracking-widest">Seat Secured</p>
+
+                        <div className="bg-gray-50 border border-gray-200 rounded p-4 mb-6 text-left space-y-2 relative overflow-hidden">
+                            <div className="absolute top-0 left-0 w-1 h-full bg-green-500"></div>
+                            <div className="flex justify-between border-b border-gray-200 pb-2 border-dashed">
+                                <span className="text-[10px] font-bold uppercase text-gray-400">Amount</span>
+                                <span className="text-sm font-bold text-gray-800">₦{successDetails.amount.toLocaleString()}</span>
+                            </div>
+                            <div className="flex justify-between border-b border-gray-200 pb-2 border-dashed">
+                                <span className="text-[10px] font-bold uppercase text-gray-400">Ref ID</span>
+                                <span className="text-[10px] font-mono text-gray-600 select-all">{successDetails.ref}</span>
+                            </div>
+                            <div className="pt-1">
+                                <span className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Receipt sent to</span>
+                                <span className="block text-xs text-ministry-blue font-medium truncate">{successDetails.email}</span>
+                            </div>
+                        </div>
+
+                        <button 
+                            onClick={() => {
+                                setShowSuccessModal(false);
+                                setPreorderModalOpen(false);
+                                setPreorderName('');
+                                setPreorderEmail('');
+                            }} 
+                            className="w-full bg-ministry-blue text-white py-3 font-bold uppercase tracking-widest hover:bg-ministry-gold hover:text-ministry-blue transition rounded-sm shadow-lg text-xs"
+                        >
+                            Close & Continue
+                        </button>
                     </div>
                 </div>
             )}
