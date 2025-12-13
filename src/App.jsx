@@ -1220,59 +1220,73 @@ function App() {
                                         <p className="text-[10px] text-gray-400 mt-1">* Tips: Use double 'Enter' for new paragraphs.</p>
                                     </div>
                                     <div className="bg-gray-50 p-3 md:p-4 rounded border border-gray-200 mt-4 max-w-full overflow-hidden">
-                                        <h4 className="text-[10px] font-bold uppercase text-gray-500 mb-3 border-b border-gray-200 pb-1">
-                                            Engagement (Optional)
-                                        </h4>
-                                        
-                                        {/* CHANGED: grid-cols-1 for mobile, grid-cols-2 for larger screens */}
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4 mb-4">
-                                            <div className="w-full">
-                                                <label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Day Number</label>
-                                                {/* CHANGED: Added min-w-0 */}
-                                                <input 
-                                                    name="bibleDay" 
-                                                    type="number" 
-                                                    placeholder="e.g. 245" 
-                                                    className="w-full min-w-0 p-2 text-sm border border-gray-300 rounded-sm outline-none focus:border-ministry-gold" 
-                                                />
-                                            </div>
-                                            <div className="w-full">
-                                                <label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Assignment</label>
-                                                {/* CHANGED: Added min-w-0 */}
-                                                <input 
-                                                    name="assignment" 
-                                                    type="text" 
-                                                    placeholder="e.g. Call a friend..." 
-                                                    className="w-full min-w-0 p-2 text-sm border border-gray-300 rounded-sm outline-none focus:border-ministry-gold" 
-                                                />
-                                            </div>
-                                        </div>
+    <h4 className="text-[10px] font-bold uppercase text-gray-500 mb-3 border-b border-gray-200 pb-1">
+        Engagement (Optional)
+    </h4>
+    
+    {/* Day & Assignment Section */}
+    <div className="flex flex-col gap-3 mb-5">
+        <div className="w-full">
+            <label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Day Number</label>
+            <input 
+                name="bibleDay" 
+                type="number" 
+                placeholder="e.g. 245" 
+                className="w-full min-w-0 p-2 text-sm border border-gray-300 rounded-sm outline-none focus:border-ministry-gold" 
+            />
+        </div>
+        <div className="w-full">
+            <label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Assignment</label>
+            <input 
+                name="assignment" 
+                type="text" 
+                placeholder="e.g. Call a friend..." 
+                className="w-full min-w-0 p-2 text-sm border border-gray-300 rounded-sm outline-none focus:border-ministry-gold" 
+            />
+        </div>
+    </div>
 
-                                        <div>
-                                            <label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Quiz Question</label>
-                                            <input 
-                                                name="quizQuestion" 
-                                                type="text" 
-                                                placeholder="Question..." 
-                                                className="w-full min-w-0 p-2 text-sm border border-gray-300 rounded-sm mb-2 outline-none focus:border-ministry-gold" 
-                                            />
-                                            
-                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                                                <input name="quizA" type="text" placeholder="Option A" className="w-full min-w-0 p-2 text-sm border border-gray-300 rounded-sm outline-none focus:border-ministry-gold" />
-                                                <input name="quizB" type="text" placeholder="Option B" className="w-full min-w-0 p-2 text-sm border border-gray-300 rounded-sm outline-none focus:border-ministry-gold" />
-                                                <input name="quizC" type="text" placeholder="Option C" className="w-full min-w-0 p-2 text-sm border border-gray-300 rounded-sm outline-none focus:border-ministry-gold" />
-                                            </div>
-                                            
-                                            <div className="mt-2 flex items-center">
-                                                <label className="text-[10px] font-bold uppercase text-gray-400 mr-2 whitespace-nowrap">Correct Answer:</label>
-                                                <select name="correctOption" className="flex-1 min-w-0 p-1 border border-gray-300 rounded-sm text-sm outline-none focus:border-ministry-gold">
-                                                    <option value="A">Option A</option>
-                                                    <option value="B">Option B</option>
-                                                    <option value="C">Option C</option>
-                                                </select>
-                                            </div>
-                                        </div>
-                                    </div>
+    {/* Quiz Section Wrapper */}
+    <div className="flex flex-col">
+        <label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Quiz Question</label>
+        <input 
+            name="quizQuestion" 
+            type="text" 
+            placeholder="Question..." 
+            className="w-full min-w-0 p-2 text-sm border border-gray-300 rounded-sm mb-3 outline-none focus:border-ministry-gold" 
+        />
+        
+        {/* OPTIONS STACK */}
+        <input 
+            name="quizA" 
+            type="text" 
+            placeholder="Option A" 
+            className="w-full min-w-0 p-2 mb-3 text-sm border border-gray-300 rounded-sm outline-none focus:border-ministry-gold" 
+        />
+        <input 
+            name="quizB" 
+            type="text" 
+            placeholder="Option B" 
+            className="w-full min-w-0 p-2 mb-3 text-sm border border-gray-300 rounded-sm outline-none focus:border-ministry-gold" 
+        />
+        <input 
+            name="quizC" 
+            type="text" 
+            placeholder="Option C" 
+            className="w-full min-w-0 p-2 text-sm border border-gray-300 rounded-sm outline-none focus:border-ministry-gold" 
+        />
+        
+        {/* ANSWER ROW */}
+        <div className="mt-5 flex items-center justify-end gap-3 bg-white p-2 border border-gray-200 rounded-sm shadow-sm">
+            <label className="text-[10px] font-bold uppercase text-gray-500">Correct Answer:</label>
+            <select name="correctOption" className="bg-gray-100 hover:bg-gray-200 cursor-pointer text-gray-700 font-bold text-xs py-1 px-4 rounded border border-gray-300 outline-none focus:border-ministry-gold transition-colors">
+                <option value="A">Option A</option>
+                <option value="B">Option B</option>
+                <option value="C">Option C</option>
+            </select>
+        </div>
+    </div>
+</div>
                                     <button className="w-full bg-ministry-blue text-white py-4 font-bold uppercase tracking-widest hover:bg-ministry-gold hover:text-ministry-blue transition shadow-lg text-sm rounded-sm">Publish Entry</button>
                                 </form>
                             </div>
