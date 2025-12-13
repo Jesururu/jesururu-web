@@ -1219,43 +1219,82 @@ function App() {
                                         <textarea name="body" rows="8" placeholder="Type the devotional content here..." required className="w-full p-3 border border-gray-300 focus:border-ministry-gold outline-none text-sm rounded-sm leading-relaxed"></textarea>
                                         <p className="text-[10px] text-gray-400 mt-1">* Tips: Use double 'Enter' for new paragraphs.</p>
                                     </div>
-                                    <div className="bg-gray-50 p-4 rounded border border-gray-200 mt-4">
-                                        <h4 className="text-[10px] font-bold uppercase text-gray-500 mb-3 border-b border-gray-200 pb-1">Engagement (Optional)</h4>
-                                        <div className="grid grid-cols-2 gap-4 mb-4">
-                                            <div><label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Day Number</label><input name="bibleDay" type="number" placeholder="e.g. 245" className="w-full p-2 text-sm border border-gray-300 rounded-sm" /></div>
-                                            <div><label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Assignment</label><input name="assignment" type="text" placeholder="e.g. Call a friend..." className="w-full p-2 text-sm border border-gray-300 rounded-sm" /></div>
-                                        </div>
-                                        <div>
-                                            <label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Quiz Question</label><input name="quizQuestion" type="text" placeholder="Question..." className="w-full p-2 text-sm border border-gray-300 rounded-sm mb-2" />
-                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                                                <input name="quizA" type="text" placeholder="Option A" className="p-2 text-sm border border-gray-300 rounded-sm" /><input name="quizB" type="text" placeholder="Option B" className="p-2 text-sm border border-gray-300 rounded-sm" /><input name="quizC" type="text" placeholder="Option C" className="p-2 text-sm border border-gray-300 rounded-sm" />
+                                    <div className="bg-gray-50 p-3 md:p-4 rounded border border-gray-200 mt-4 max-w-full overflow-hidden">
+                                        <h4 className="text-[10px] font-bold uppercase text-gray-500 mb-3 border-b border-gray-200 pb-1">
+                                            Engagement (Optional)
+                                        </h4>
+                                        
+                                        {/* CHANGED: grid-cols-1 for mobile, grid-cols-2 for larger screens */}
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4 mb-4">
+                                            <div className="w-full">
+                                                <label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Day Number</label>
+                                                {/* CHANGED: Added min-w-0 */}
+                                                <input 
+                                                    name="bibleDay" 
+                                                    type="number" 
+                                                    placeholder="e.g. 245" 
+                                                    className="w-full min-w-0 p-2 text-sm border border-gray-300 rounded-sm outline-none focus:border-ministry-gold" 
+                                                />
                                             </div>
-                                            <div className="mt-2"><label className="text-[10px] font-bold uppercase text-gray-400 mr-2">Correct Answer:</label><select name="correctOption" className="p-1 border border-gray-300 rounded-sm text-sm"><option value="A">Option A</option><option value="B">Option B</option><option value="C">Option C</option></select></div>
+                                            <div className="w-full">
+                                                <label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Assignment</label>
+                                                {/* CHANGED: Added min-w-0 */}
+                                                <input 
+                                                    name="assignment" 
+                                                    type="text" 
+                                                    placeholder="e.g. Call a friend..." 
+                                                    className="w-full min-w-0 p-2 text-sm border border-gray-300 rounded-sm outline-none focus:border-ministry-gold" 
+                                                />
+                                            </div>
                                         </div>
-                                    </div> 
+
+                                        <div>
+                                            <label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Quiz Question</label>
+                                            <input 
+                                                name="quizQuestion" 
+                                                type="text" 
+                                                placeholder="Question..." 
+                                                className="w-full min-w-0 p-2 text-sm border border-gray-300 rounded-sm mb-2 outline-none focus:border-ministry-gold" 
+                                            />
+                                            
+                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                                                <input name="quizA" type="text" placeholder="Option A" className="w-full min-w-0 p-2 text-sm border border-gray-300 rounded-sm outline-none focus:border-ministry-gold" />
+                                                <input name="quizB" type="text" placeholder="Option B" className="w-full min-w-0 p-2 text-sm border border-gray-300 rounded-sm outline-none focus:border-ministry-gold" />
+                                                <input name="quizC" type="text" placeholder="Option C" className="w-full min-w-0 p-2 text-sm border border-gray-300 rounded-sm outline-none focus:border-ministry-gold" />
+                                            </div>
+                                            
+                                            <div className="mt-2 flex items-center">
+                                                <label className="text-[10px] font-bold uppercase text-gray-400 mr-2 whitespace-nowrap">Correct Answer:</label>
+                                                <select name="correctOption" className="flex-1 min-w-0 p-1 border border-gray-300 rounded-sm text-sm outline-none focus:border-ministry-gold">
+                                                    <option value="A">Option A</option>
+                                                    <option value="B">Option B</option>
+                                                    <option value="C">Option C</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                    </div>
                                     <button className="w-full bg-ministry-blue text-white py-4 font-bold uppercase tracking-widest hover:bg-ministry-gold hover:text-ministry-blue transition shadow-lg text-sm rounded-sm">Publish Entry</button>
                                 </form>
                             </div>
                         )}
                         {/* === PREMIUM SALES DASHBOARD === */}
                         {adminFormData.activeTab === 'sales' && (
-                            <div className="bg-gray-50/50 p-6 md:p-10 rounded-3xl h-full flex flex-col animate-fade-in">
-                                
+                            <div className="bg-gray-50/50 p-2 sm:p-4 md:p-10 rounded-xl md:rounded-3xl h-full flex flex-col animate-fade-in">                                
                                 {/* === HEADER SECTION === */}
-                                <div className="flex flex-col md:flex-row justify-between items-end md:items-center mb-8 gap-6">
-                                    <div>
-                                        <h3 className="text-3xl font-serif font-bold text-gray-800 tracking-tight mb-2">Transactions</h3>
-                                        <div className="flex items-center gap-3 text-sm">
-                                            <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full font-bold shadow-sm border border-green-200">
+                                <div className="flex flex-col md:flex-row justify-between items-end md:items-center mb-4 md:mb-8 gap-4 md:gap-6">
+                                    <div className="w-full md:w-auto">
+                                        <h3 className="text-2xl md:text-3xl font-serif font-bold text-gray-800 tracking-tight mb-2">Transactions</h3>
+                                        <div className="flex flex-wrap items-center gap-2 md:gap-3 text-sm">
+                                            <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full font-bold shadow-sm border border-green-200 text-xs md:text-sm">
                                                 Revenue: ₦{bookSales.reduce((sum, s) => sum + (s.amountPaid || 0), 0).toLocaleString()}
                                             </span>
-                                            <span className="text-gray-400">|</span>
-                                            <span className="text-gray-500 font-medium">{bookSales.length} total sales</span>
+                                            <span className="text-gray-400 hidden md:inline">|</span>
+                                            <span className="text-gray-500 font-medium text-xs md:text-sm">{bookSales.length} total sales</span>
                                         </div>
                                     </div>
 
                                     {/* ACTION TOOLBAR */}
-                                    <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+                                    <div className="flex flex-wrap items-center gap-2 md:gap-3 w-full md:w-auto">
                                         
                                         {/* 1. Search Input */}
                                         <div className="relative group w-full md:w-64">
@@ -1273,34 +1312,36 @@ function App() {
                                             />
                                         </div>
 
-                                        {/* 2. Refresh Button (Minimalist) */}
-                                        <button 
-                                            onClick={fetchBookSales} 
-                                            className="p-2.5 bg-white border border-gray-200 text-gray-500 rounded-xl hover:bg-gray-50 hover:text-ministry-blue transition shadow-sm"
-                                            title="Refresh Data"
-                                        >
-                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                                            </svg>
-                                        </button>
-
-                                        {/* 3. NEW CLEAR BUTTON (Clean, Professional, SVG Icon) */}
-                                        {bookSales.length > 0 && (
+                                        <div className="flex items-center gap-2 w-full md:w-auto">
+                                            {/* 2. Refresh Button (Minimalist) */}
                                             <button 
-                                                onClick={handleDeleteAllSales} 
-                                                className="group px-4 py-2.5 bg-white border border-red-100 text-red-500 rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-red-50 hover:border-red-200 hover:text-red-600 transition-all shadow-sm flex items-center gap-2"
+                                                onClick={fetchBookSales} 
+                                                className="flex-1 md:flex-none justify-center p-2.5 bg-white border border-gray-200 text-gray-500 rounded-xl hover:bg-gray-50 hover:text-ministry-blue transition shadow-sm flex items-center"
+                                                title="Refresh Data"
                                             >
-                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 opacity-70 group-hover:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                                                 </svg>
-                                                <span>Clear History</span>
                                             </button>
-                                        )}
+
+                                            {/* 3. NEW CLEAR BUTTON (Clean, Professional, SVG Icon) */}
+                                            {bookSales.length > 0 && (
+                                                <button 
+                                                    onClick={handleDeleteAllSales} 
+                                                    className="flex-1 md:flex-none justify-center group px-4 py-2.5 bg-white border border-red-100 text-red-500 rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-red-50 hover:border-red-200 hover:text-red-600 transition-all shadow-sm flex items-center gap-2"
+                                                >
+                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 opacity-70 group-hover:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                    </svg>
+                                                    <span>Clear History</span>
+                                                </button>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
 
                                 {/* === TABLE CARD === */}
-                                <div className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden flex-1 flex flex-col">
+                                <div className="bg-white rounded-lg md:rounded-2xl shadow-xl border border-gray-100 overflow-hidden flex-1 flex flex-col">
                                     <div className="overflow-x-auto flex-1 custom-scrollbar">
                                         <table className="w-full text-left border-collapse min-w-[800px]">
                                             <thead className="bg-gray-50/80 backdrop-blur sticky top-0 z-10 border-b border-gray-100">
@@ -1327,15 +1368,12 @@ function App() {
                                                         {/* 1. CUSTOMER COLUMN */}
                                                         <td className="p-5 pl-8">
                                                             <div className="flex items-center gap-4">
-                                                                {/* Auto-Avatar */}
                                                                 <div className="w-10 h-10 rounded-full bg-gradient-to-br from-ministry-blue to-blue-600 text-white flex items-center justify-center font-bold text-xs shadow-md">
                                                                     {sale.customerName ? sale.customerName.split(' ').map(n=>n[0]).join('').slice(0,2).toUpperCase() : '?'}
                                                                 </div>
                                                                 <div>
                                                                     <div className="font-bold text-gray-800 text-sm">{sale.customerName}</div>
                                                                     <div className="text-gray-400 text-xs">{sale.customerEmail}</div>
-                                                                    
-                                                                    {/* Payer Differs Warning */}
                                                                     {((sale.payerEmail && sale.payerEmail !== sale.customerEmail) || sale.payerAccountName) && (
                                                                         <div className="mt-1.5 flex items-center gap-1.5 bg-yellow-50 text-yellow-700 px-2 py-1 rounded-md w-max border border-yellow-100">
                                                                             <span className="text-[10px] font-bold uppercase opacity-60">Paid by:</span>
@@ -1362,7 +1400,6 @@ function App() {
                                                         {/* 3. PAYMENT INFO */}
                                                         <td className="p-5">
                                                             <div className="flex items-center gap-2 text-sm text-gray-600">
-                                                                {/* Icon Logic */}
                                                                 <span className="text-lg bg-gray-100 p-1.5 rounded-lg">
                                                                     {(sale.cardType === 'visa' || sale.cardType === 'mastercard') ? '💳' : '🏦'}
                                                                 </span>
